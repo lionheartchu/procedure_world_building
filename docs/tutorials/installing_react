@@ -1,0 +1,140 @@
+# React for Beginners
+
+This is a very simple React tutorial for someone who is just starting out.
+
+## 1. What is React?
+
+React is a JavaScript library for building user interfaces. It helps you create interactive web pages with reusable pieces called components.
+
+A component is just a small block of UI, like a button, card, or heading.
+
+## 2. Why use React?
+
+React is popular because it makes apps easier to organize.
+
+It helps with:
+- reusable code
+- cleaner structure
+- fast updates when data changes
+- easier UI design for web apps
+
+## 3. What we created here
+
+This project already includes a small React app running in the folder:
+
+- `react-app/`
+
+We set up a basic app with:
+- a heading
+- a button
+- a click counter
+- a list of beginner concepts
+
+## 4. Run the app
+
+Open a terminal and go to the project folder:
+
+```bash
+cd /Users/lionheart/Desktop/my-world/pwb_hw0/react-app
+```
+
+Then start the app:
+
+```bash
+npm run dev -- --host 0.0.0.0
+```
+
+The terminal will give you a local URL, usually:
+
+```text
+http://localhost:5173/
+```
+
+Open that address in your browser.
+
+## 5. Important files
+
+Here are the main files to look at:
+
+- `src/App.jsx` — the main React page
+- `src/App.css` — styling for the page
+- `src/index.css` — global page styling
+
+## 6. The main idea in React
+
+React uses JSX, which looks like HTML inside JavaScript.
+
+```jsx
+function App() {
+  return <h1>Hello, React!</h1>
+}
+```
+
+That is how you can display content on the page.
+
+## 7. State
+
+State is data that can change over time. In React, you often use `useState`.
+
+Example:
+
+```jsx
+import { useState } from 'react'
+
+function App() {
+  const [count, setCount] = useState(0)
+
+  return (
+    <button onClick={() => setCount(count + 1)}>
+      Count is {count}
+    </button>
+  )
+}
+```
+
+This means:
+- `count` stores the value
+- `setCount` updates the value
+- the page re-renders when the value changes
+
+## 8. Beginner workflow
+
+A simple beginner React workflow is:
+
+1. Create a project
+2. Edit `App.jsx`
+3. Add some HTML and JavaScript
+4. Use `useState` for interactive parts
+5. Save the file and watch the browser update automatically
+
+## 9. Tips for learning
+
+- start with small projects
+- keep one idea at a time
+- read error messages carefully
+- edit one file at a time
+- save often and refresh the browser
+
+## 10. Next steps
+
+Once you are comfortable, try:
+- a to-do list
+- a counter with more buttons
+- a login form
+- a simple card layout
+
+React becomes much easier once you understand components and state.
+
+## 11. Quick commands
+
+```bash
+npm install
+npm run dev -- --host 0.0.0.0
+npm run build
+```
+
+`npm run build` creates a production version of the app for deployment.
+
+---
+
+This is your first React app. You can change the text, button label, or layout in `src/App.jsx` and `src/App.css` to experiment.
