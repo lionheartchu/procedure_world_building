@@ -2,6 +2,12 @@
   --display: 'Syne', sans-serif;
   --body: 'Figtree', sans-serif;
 
+  --deep-indigo: #0b0e1e;
+  --grey-violet: #3a3a5c;
+  --faded-lavender: #8d86b8;
+  --pale-lavender: #b9b2da;
+  --moonlit-mint: #9fe8c8;
+
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -24,7 +30,7 @@ body,
 
 body {
   overflow: hidden;
-  background: #0d1419;
+  background: var(--deep-indigo);
   font-family: var(--body);
-  color: #e8f2f6;
+  color: var(--pale-lavender);
 }
