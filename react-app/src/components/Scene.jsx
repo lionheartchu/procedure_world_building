@@ -1,5 +1,6 @@
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
+import CanvasCapture from './CanvasCapture'
 import Terrain from './Terrain'
 import Atmosphere from './Atmosphere'
 
@@ -16,13 +17,16 @@ export default function Scene({
   running,
   wireframe,
   eventSource,
+  onCapture,
+  shader = null,
 }) {
   return (
     <Canvas
       className="scene-canvas"
       camera={{ position: [9.5, 5.6, 15], fov: 40, near: 0.1, far: 220 }}
       dpr={[1, 2]}
-      gl={{ antialias: true, alpha: false }}
+      // preserveDrawingBuffer lets the Library grab a thumbnail of the frame.
+      gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true }}
       eventSource={eventSource}
       eventPrefix="client"
       style={{ pointerEvents: 'none' }}
@@ -35,6 +39,8 @@ export default function Scene({
       <directionalLight position={[-16, 8, -14]} intensity={1.5} color="#C6BFE6" />
       <directionalLight position={[10, 4, 12]} intensity={0.5} color="#565C96" />
 
+      <CanvasCapture onReady={onCapture} />
+
       <Atmosphere />
       <Terrain
         field={field}
@@ -43,6 +49,7 @@ export default function Scene({
         simParams={simParams}
         running={running}
         wireframe={wireframe}
+        shader={shader}
       />
 
       <OrbitControls

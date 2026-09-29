@@ -37,6 +37,285 @@
   opacity: 0.86;
 }
 
+/* --- study tabs --------------------------------------------------------- */
+
+.view-tabs {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.6rem;
+  pointer-events: auto;
+}
+
+.view-tab {
+  position: relative;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--body);
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(141, 134, 184, 0.45);
+  cursor: pointer;
+  transition: color 500ms ease;
+}
+
+.view-tab:hover {
+  color: rgba(185, 178, 218, 0.8);
+}
+
+.view-tab.is-current {
+  color: var(--pale-lavender);
+}
+
+.view-tab.is-current::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: -5px;
+  left: 0;
+  height: 1px;
+  background: rgba(185, 178, 218, 0.45);
+}
+
+.view-tab:focus-visible {
+  outline: 1px solid rgba(141, 134, 184, 0.5);
+  outline-offset: 4px;
+}
+
+/* --- library -------------------------------------------------------------- */
+
+.library {
+  position: absolute;
+  top: clamp(6.5rem, 12vh, 8rem);
+  left: clamp(1.25rem, 3vw, 2rem);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.65rem;
+  animation: rise-in 2.4s ease-out 0.5s both;
+}
+
+.library-toggle {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--body);
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(141, 134, 184, 0.42);
+  cursor: pointer;
+  transition: color 500ms ease;
+}
+
+.library-toggle:hover,
+.library-toggle.is-open {
+  color: rgba(185, 178, 218, 0.85);
+}
+
+.library-toggle:focus-visible {
+  outline: 1px solid rgba(141, 134, 184, 0.5);
+  outline-offset: 4px;
+}
+
+.library-panel {
+  width: min(15rem, calc(100vw - 2rem));
+  max-height: min(28rem, calc(100svh - 12rem));
+  overflow-y: auto;
+  padding: 0.9rem 1rem 1rem;
+  border: 1px solid rgba(141, 134, 184, 0.16);
+  border-radius: 2px;
+  background: rgba(13, 17, 38, 0.66);
+  animation: rise-in 600ms ease-out both;
+  pointer-events: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(141, 134, 184, 0.3) transparent;
+}
+
+.library-panel code {
+  font-size: 0.66rem;
+  color: rgba(185, 178, 218, 0.8);
+}
+
+.library-account {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+  font-size: 0.68rem;
+}
+
+.library-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(185, 178, 218, 0.8);
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: rgba(141, 134, 184, 0.65);
+  font-family: var(--body);
+  font-size: 0.68rem;
+  cursor: pointer;
+  transition: color 400ms ease;
+}
+
+.link-button:hover {
+  color: var(--pale-lavender);
+}
+
+.save-row {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.9rem;
+}
+
+.text-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid rgba(141, 134, 184, 0.22);
+  border-radius: 2px;
+  background: rgba(11, 14, 30, 0.9);
+  color: rgba(185, 178, 218, 0.95);
+  font-family: var(--body);
+  font-size: 0.7rem;
+}
+
+.text-input::placeholder {
+  color: rgba(141, 134, 184, 0.4);
+}
+
+.text-input:focus-visible,
+.control-button:disabled {
+  outline: none;
+}
+
+.control-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.config-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.config-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.config-open {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.config-thumb {
+  width: 3rem;
+  height: 1.9rem;
+  flex: none;
+  border: 1px solid rgba(141, 134, 184, 0.2);
+  border-radius: 2px;
+  object-fit: cover;
+  background: rgba(11, 14, 30, 0.9);
+}
+
+.config-thumb.is-empty {
+  display: block;
+}
+
+.config-meta {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.config-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.7rem;
+  color: rgba(185, 178, 218, 0.9);
+}
+
+.config-when {
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  color: rgba(141, 134, 184, 0.5);
+}
+
+.config-open:hover .config-name {
+  color: var(--pale-lavender);
+}
+
+.config-delete {
+  flex: none;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.panel-error {
+  margin: 0.85rem 0 0;
+  font-size: 0.66rem;
+  line-height: 1.45;
+  color: rgba(214, 160, 180, 0.85);
+}
+
+@media (max-width: 760px) {
+  .library {
+    display: none;
+  }
+}
+
+/* --- cost readout ------------------------------------------------------- */
+
+.stat-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.68rem;
+}
+
+.stat-row dt {
+  letter-spacing: 0.04em;
+  color: rgba(141, 134, 184, 0.55);
+}
+
+.stat-row dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: rgba(185, 178, 218, 0.9);
+}
+
 /* --- control panel ------------------------------------------------------ */
 
 .side-panel {
@@ -132,6 +411,14 @@
   gap: 0.4rem;
 }
 
+/* Mode buttons stack, because their labels are words rather than one term. */
+.mode-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.85rem;
+}
+
 .control-button {
   flex: 1;
   padding: 0.4rem 0.5rem;
@@ -149,6 +436,12 @@
 
 .control-button:hover {
   border-color: rgba(185, 178, 218, 0.5);
+  color: var(--pale-lavender);
+}
+
+.control-button.is-current {
+  border-color: rgba(185, 178, 218, 0.45);
+  background: rgba(185, 178, 218, 0.1);
   color: var(--pale-lavender);
 }
 
@@ -199,14 +492,29 @@
 }
 
 .slider {
+  /* The input is a transparent 13px box and the 1px line is drawn by the track
+     pseudo-elements. Drawing the line on the input itself left the 9px thumb
+     overflowing a 1px box, which each engine places differently (WebKit pins
+     it to the top edge), so thumbs sat off the line. */
   -webkit-appearance: none;
   appearance: none;
+  display: block;
   width: 100%;
-  height: 1px;
-  margin: 0.3rem 0;
-  background: rgba(141, 134, 184, 0.28);
+  height: 13px;
+  margin: 0;
+  background: transparent;
   outline: none;
   cursor: pointer;
+}
+
+.slider::-webkit-slider-runnable-track {
+  height: 1px;
+  background: rgba(141, 134, 184, 0.28);
+}
+
+.slider::-moz-range-track {
+  height: 1px;
+  background: rgba(141, 134, 184, 0.28);
 }
 
 .slider::-webkit-slider-thumb {
@@ -214,6 +522,8 @@
   appearance: none;
   width: 9px;
   height: 9px;
+  /* Centre on the 1px track: (1 - 9) / 2. */
+  margin-top: -4px;
   border-radius: 50%;
   border: none;
   background: var(--faded-lavender);
@@ -231,7 +541,7 @@
 
 .slider:focus-visible {
   outline: 1px solid rgba(141, 134, 184, 0.5);
-  outline-offset: 5px;
+  outline-offset: 2px;
 }
 
 .select-slot {

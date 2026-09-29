@@ -53,6 +53,9 @@ const ACTIVITY_CONTRAST = 20
 /** Floor on that reference, so a nearly still field does not glow. */
 const ACTIVITY_FLOOR = 0.0025
 
+/** Seconds over which activity fades in after a reset. */
+const ACTIVITY_WARMUP = 2.5
+
 export class SedimentSim {
   constructor(res = SIM_RES) {
     const n = res * res
@@ -146,8 +149,19 @@ export class SedimentSim {
     let fluxSum = 0
     for (let i = 0; i < n; i++) fluxSum += Math.abs(delta[i])
     const meanRate = fluxSum / n / dt
-    this.fluxScale += (meanRate - this.fluxScale) * Math.min(1, dt * 0.5)
+
+    // Seeded on the first step rather than eased up from zero: the average has
+    // a two-second time constant, and starting it at zero left the reference
+    // pinned to its floor for that whole time.
+    if (this.steps === 0) this.fluxScale = meanRate
+    else this.fluxScale += (meanRate - this.fluxScale) * Math.min(1, dt * 0.5)
     const activityReference = Math.max(ACTIVITY_FLOOR, this.fluxScale * ACTIVITY_CONTRAST)
+
+    // Even seeded, the first second of a run has genuinely tiny but very
+    // concentrated flux, so relative activity saturates and the whole field
+    // lights up at once. Fading activity in kills that flash and costs nothing
+    // afterwards — it is exactly the window in which nothing has happened yet.
+    const warmUp = this.elapsed < ACTIVITY_WARMUP ? this.elapsed / ACTIVITY_WARMUP : 1
 
     for (let i = 0; i < n; i++) {
       let s = S[i] + delta[i]
@@ -159,7 +173,7 @@ export class SedimentSim {
       S[i] = s > SED_MAX ? SED_MAX : s
 
       // Activity is a flux rate, so it means the same thing at any step size.
-      const rate = Math.abs(delta[i]) / dt / activityReference
+      const rate = (Math.abs(delta[i]) / dt / activityReference) * warmUp
       const a = A[i] * activityFade
       A[i] = rate > a ? Math.min(1, rate) : a
     }

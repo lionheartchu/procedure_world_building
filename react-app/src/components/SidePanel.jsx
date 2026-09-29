@@ -1,4 +1,5 @@
 import FieldMap from './FieldMap'
+import Slider from './Slider'
 import SimulationMap from './SimulationMap'
 import { SHAPING_KEYS, SHAPING_OPS } from '../lib/field'
 
@@ -92,29 +93,6 @@ const SIM_SLIDERS = [
     hint: 'How much material exposed ground sheds per second',
   },
 ]
-
-function Slider({ definition, value, onChange }) {
-  const { key, label, min, max, step, integer, hint } = definition
-  return (
-    <label className="slider-slot" title={hint}>
-      <span className="slider-meta">
-        <span className="slider-label">{label}</span>
-        <span className="slider-value">
-          {integer ? value : Number(value).toFixed(step < 0.01 ? 3 : 2)}
-        </span>
-      </span>
-      <input
-        className="slider"
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(key, Number(e.target.value))}
-      />
-    </label>
-  )
-}
 
 export default function SidePanel({
   field,

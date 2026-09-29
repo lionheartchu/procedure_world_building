@@ -72,3 +72,43 @@ export function simulationColor(sediment01, activity01) {
   if (a > 0) c = mix(c, [0.624, 0.91, 0.784], Math.pow(a, 1.4) * 0.6)
   return c
 }
+
+/**
+ * Colour for a point inside the sediment volume.
+ *
+ * Reads as stratigraphy rather than as a data ramp: pale where the mass meets
+ * the air, deepening with burial, with the deposition layers showing as a
+ * faint banding wherever the mass has been opened.
+ *
+ * @param burial     0 at the bed surface, 1 deep inside
+ * @param strata     signed layer phase, -1..1
+ * @param channel    0..1, how close the point is to a carved channel wall
+ * @param scaffold   0..1, how close the point is to a scaffold strut
+ */
+export function volumeColor(burial, strata, channel, scaffold = 0) {
+  const b = clamp01(burial)
+
+  let c = RAMP.crest
+  c = mix(c, RAMP.midLavender, smoothstep(0.02, 0.2, b))
+  c = mix(c, RAMP.submerged, smoothstep(0.18, 0.55, b))
+  c = mix(c, RAMP.deepBasin, smoothstep(0.55, 0.95, b))
+
+  // Deposition banding — small, so it reads as material rather than stripes.
+  const band = 1 + strata * 0.09
+  c = [c[0] * band, c[1] * band, c[2] * band]
+
+  // Mint only on the walls of a channel: the one surface here that water made.
+  const trace = clamp01(channel)
+  if (trace > 0) c = mix(c, [0.624, 0.91, 0.784], trace * 0.3)
+
+  // The scaffold: paler and denser-looking than the sediment it grew through,
+  // with mint gathering along the struts. Struts are a small fraction of the
+  // surface, so the accent stays scarce without a rule to keep it scarce.
+  const strut = clamp01(scaffold)
+  if (strut > 0) {
+    c = mix(c, [0.87, 0.85, 0.96], smoothstep(0.1, 0.72, strut) * 0.62)
+    c = mix(c, [0.624, 0.91, 0.784], strut * strut * 0.2)
+  }
+
+  return c
+}

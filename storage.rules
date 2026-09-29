@@ -1,0 +1,15 @@
+rules_version = '2';
+
+// Configuration thumbnails, one small JPEG per saved configuration. Same rule
+// as Firestore: your own uid only, plus a size and type guard on writes.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /users/{uid}/configs/{file} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if request.auth != null
+                   && request.auth.uid == uid
+                   && request.resource.size < 2 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+  }
+}

@@ -10,7 +10,7 @@ const MOTE_COUNT = 420
  * Suspended sediment in the air: sparse, slow, lavender. Depth here comes from
  * fog and layering rather than from more geometry.
  */
-function Motes() {
+function Motes({ spread, lift }) {
   const ref = useRef(null)
 
   const { positions, drift } = useMemo(() => {
@@ -18,14 +18,14 @@ function Motes() {
     const drift = new Float32Array(MOTE_COUNT * 2)
     const random = mulberry32(9137)
     for (let i = 0; i < MOTE_COUNT; i++) {
-      positions[i * 3] = (random() - 0.5) * FIELD_SIZE * 1.5
-      positions[i * 3 + 1] = random() * 4.5 - 1
-      positions[i * 3 + 2] = (random() - 0.5) * FIELD_SIZE * 1.5
+      positions[i * 3] = (random() - 0.5) * spread
+      positions[i * 3 + 1] = random() * lift - lift * 0.22
+      positions[i * 3 + 2] = (random() - 0.5) * spread
       drift[i * 2] = random() * Math.PI * 2
       drift[i * 2 + 1] = 0.3 + random() * 0.7
     }
     return { positions, drift }
-  }, [])
+  }, [spread, lift])
 
   const basePositions = useMemo(() => positions.slice(), [positions])
 
@@ -111,11 +111,16 @@ function Sky() {
   )
 }
 
-export default function Atmosphere() {
+/**
+ * Shared atmosphere. `spread` and `lift` size the drifting motes to whatever
+ * the view is looking at — the 26-unit terrain field or the much smaller
+ * sediment volume — so they read as suspended material at either scale.
+ */
+export default function Atmosphere({ spread = FIELD_SIZE * 1.5, lift = 4.5 }) {
   return (
     <>
       <Sky />
-      <Motes />
+      <Motes spread={spread} lift={lift} />
     </>
   )
 }

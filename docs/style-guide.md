@@ -1,5 +1,10 @@
 # Nimbus Style Guide
 
+> **Superseded — kept for history.** This describes the UI of *Nimbus*, the
+> storm prototype this repo started as, before the Trace Habitat / Residual
+> Ecology direction. The current visual rules are in
+> [`AESTHETIC_LANGUAGE.md`](../AESTHETIC_LANGUAGE.md).
+
 Graphic system for the app UI. Inspired by **TouchDesigner** and **Max/MSP**: dense, technical, instrument-like chrome over a live viewport—not a marketing site.
 
 ---
