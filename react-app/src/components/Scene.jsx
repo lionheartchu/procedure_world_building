@@ -1,11 +1,4 @@
-import { Canvas, useThree } from '@react-three/fiber'
-
-// TEMPORARY evaluation handle — remove before finishing.
-function DevHandle() {
-  const state = useThree()
-  if (import.meta.env.DEV) window.__three = state
-  return null
-}
+import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import CanvasCapture from './CanvasCapture'
 import Terrain from './Terrain'
@@ -51,7 +44,6 @@ export default function Scene({
       <directionalLight position={[10, 4, 12]} intensity={0.5} color="#565C96" />
 
       <CanvasCapture onReady={onCapture} />
-      <DevHandle />
 
       {/* The habitat's own air (AmbientAir) replaces the old motes here. */}
       <Atmosphere motes={!air} />
@@ -71,7 +63,6 @@ export default function Scene({
       {children}
 
       <OrbitControls
-        makeDefault
         enableDamping
         dampingFactor={0.05}
         rotateSpeed={0.45}

@@ -32,6 +32,10 @@ works. Known limitations, details in
 
 ## Next
 
+- [ ] Particle study, phased rework from the baseline (reference:
+      `docs/references/Ambient Particles_ref.png`), one reviewed layer at a
+      time: dust → wisps → colony residents → basin haze → rare foreground
+      events → integration
 - [ ] Air: flakes turned by the air around them rather than a scripted spin
 - [ ] Air: veils occluded by colonies, not only the floor
 

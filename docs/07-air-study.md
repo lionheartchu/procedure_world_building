@@ -2,6 +2,28 @@
 
 *Assignment 3. The residents of the air, moved by one field.*
 
+> **Status: pre-rework baseline — not final.** This document records the
+> ambient particle system as it stands before a deliberate, phased rework
+> (one visual layer at a time, each reviewed before the next). It is kept as
+> a stable checkpoint, not as the finished design.
+>
+> **Known visual limitations of this baseline:**
+> - **Wisps** can still read like thin rain or streaks.
+> - **Resident types are not differentiated strongly enough.** Dust, motes,
+>   wisps and flakes are hard to tell apart at normal viewing distances.
+> - **The palette is still fairly monochrome lavender.** Silver-blue,
+>   blue-white and mint barely register.
+> - **The spatial ecology is too subtle.** Pockets, streams and colony
+>   circulation exist in the field and in the measurements, but barely show
+>   in the image.
+>
+> Once, an overexposed bright blob appeared in a dev tab that had stayed
+> open through many hot reloads of the particle code. It went away on
+> refresh, and a five-minute run on a fresh load did not reproduce it.
+>
+> The streams (study 06) remain **unresolved and paused**; see the end of
+> this document.
+
 **The assignment.** Add a particle layer moved by a vector field:
 - particles that live in the scene's volume, not on the terrain
 - a smooth 3D flow field: a slow large-scale drift, gentle curl, and the

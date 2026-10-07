@@ -29,7 +29,7 @@ deployed at **residual-ecology.web.app**.
 | 04 | [Shader study](docs/04-shader-study.md) | Three material readings of the same terrain — geological, dormant, membrane |
 | 05 | [Scatter study](docs/05-scatter-study.md) | Populating the world with three trace-grown languages — bridgework, membrane bloom, shard / residue — placed by rules over the world's data and its sediment history |
 | 06 | [Water veins — spline study](docs/06-passages-study.md) | Assignment 2: streams traced downhill from high ground into the basins, carving their channels into the one world every tab shares. *Paused; needs later revision* |
-| 07 | [Air — particle study](docs/07-air-study.md) | Assignment 3: a small ecology of air residents — dust, wisps, motes, flakes, haze — moved by one field with quiet pockets, downhill streams and a circulation at each colony |
+| 07 | [Air — particle study](docs/07-air-study.md) | Assignment 3: a small ecology of air residents — dust, wisps, motes, flakes, haze — moved by one field with quiet pockets, downhill streams and a circulation at each colony. *Pre-rework baseline; phased rework next* |
 
 ## Direction and constraints
 
