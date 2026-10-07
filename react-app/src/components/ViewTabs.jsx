@@ -2,6 +2,7 @@ const VIEWS = [
   { id: 'field', label: 'Field' },
   { id: 'volume', label: 'Volume' },
   { id: 'shaders', label: 'Shaders' },
+  { id: 'scatter', label: 'Scatter' },
 ]
 
 /** Quiet text tabs under the title. The studies coexist; none is modal. */

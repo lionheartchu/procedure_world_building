@@ -1,8 +1,16 @@
-import { Canvas } from '@react-three/fiber'
+import { Canvas, useThree } from '@react-three/fiber'
+
+// TEMPORARY evaluation handle — remove before finishing.
+function DevHandle() {
+  const state = useThree()
+  if (import.meta.env.DEV) window.__three = state
+  return null
+}
 import { OrbitControls } from '@react-three/drei'
 import CanvasCapture from './CanvasCapture'
 import Terrain from './Terrain'
 import Atmosphere from './Atmosphere'
+import AmbientAir from './AmbientAir'
 
 const DEEP_INDIGO = '#0B0E1E'
 // Haze is deliberately lighter than the background: distance dissolves into a
@@ -19,6 +27,9 @@ export default function Scene({
   eventSource,
   onCapture,
   shader = null,
+  streams = null,
+  air = null,
+  children,
 }) {
   return (
     <Canvas
@@ -40,8 +51,13 @@ export default function Scene({
       <directionalLight position={[10, 4, 12]} intensity={0.5} color="#565C96" />
 
       <CanvasCapture onReady={onCapture} />
+      <DevHandle />
 
-      <Atmosphere />
+      {/* The habitat's own air (AmbientAir) replaces the old motes here. */}
+      <Atmosphere motes={!air} />
+      {air && (
+        <AmbientAir field={field} elevation={params.elevation} waterLevel={params.waterLevel} {...air} />
+      )}
       <Terrain
         field={field}
         params={params}
@@ -50,9 +66,12 @@ export default function Scene({
         running={running}
         wireframe={wireframe}
         shader={shader}
+        streams={streams}
       />
+      {children}
 
       <OrbitControls
+        makeDefault
         enableDamping
         dampingFactor={0.05}
         rotateSpeed={0.45}

@@ -13,3 +13,17 @@ plan the residual scaffold in [`../03-voxel-study.md`](../03-voxel-study.md).
 
 What they have in common, and what the sponge-like earlier results lacked:
 elongation, spanning, and nodes.
+
+## Dream Organism
+
+Concept sheets for the Dream Organism branch — a trace-grown, non-human
+perceptual colony. Also **conceptual mockups, not app output**; used as loose
+guidance for the scatter study, [`../05-scatter-study.md`](../05-scatter-study.md),
+not as targets to copy.
+
+| Image | Direction |
+|---|---|
+| `Dream Organism.png` | The whole organism: gathers, accretes, wraps, bridges; growth drawn as trace → gather → accrete → wrap → colony |
+| `Bridgework.png` | Structural support — elegant spans, tensile connections, open porous structure |
+| `Membrane Bloom.png` | Soft surface / growth — translucent skins, folded blooms, aperture clusters |
+| `Shard : residue language.png` | Sediment / fragment — layered residue, trace sediment, beads and crust |

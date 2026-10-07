@@ -1,8 +1,9 @@
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { buildHeightGrid } from '../lib/field'
 import { SED_DISPLAY, SIM_RES } from '../lib/sediment'
+import { STREAM_RES } from '../lib/streams'
 import { PALETTE, RAMP } from '../lib/palette'
 
 export const FIELD_SIZE = 26
@@ -104,7 +105,17 @@ function createTerrainMaterial() {
         uTime: { value: 0 },
         uHeightInfluence: { value: 1 },
         uStrata: { value: 0.45 },
+        // Slope rank of this landform (45th and 85th percentiles of
+        // 1 - normal.y), so strata show on *its* steeper faces.
+        uExposureLo: { value: 0.03 },
+        uExposureHi: { value: 0.1 },
         uActivityInfluence: { value: 0.7 },
+        // Scatter's base revision: height hierarchy and body in the value.
+        // 0 everywhere else, so the Shaders tab's Dormant is unchanged.
+        uRelief: { value: 0 },
+        // Water veins: damp banks, settled material and flow, on a finer
+        // grid than the sediment record. Shared by every tab.
+        uStream: { value: null },
         uPulse: { value: 0.5 },
         uFresnel: { value: 0.7 },
         uMembrane: { value: 0.5 },
@@ -197,7 +208,12 @@ function createTerrainMaterial() {
       uniform float uTime;
       uniform float uHeightInfluence;
       uniform float uStrata;
+      uniform float uExposureLo;
+      uniform float uExposureHi;
       uniform float uActivityInfluence;
+      uniform float uRelief;
+      uniform sampler2D uStream;
+      uniform float uFieldSize;
       uniform float uPulse;
       uniform float uFresnel;
       uniform float uMembrane;
@@ -256,6 +272,14 @@ function createTerrainMaterial() {
         float rim = pow(1.0 - facing, 3.0);
         float sed = clamp(vSediment / uSedScale, 0.0, 1.0);
         float act = clamp(vActivity, 0.0, 1.0);
+        // Only real accumulation counts; a thin dusting reads as nothing.
+        float residueMask = smoothstep(0.12, 0.62, sed);
+        // Depth below the (tidal) water line, as a fraction of the relief.
+        float E = max(uElevation, 0.001);
+        float dn = (uWaterY - vWorldPos.y) / E;
+        // Water veins: damp banks (R), settled material (G), flow (B).
+        vec4 stream = texture2D(uStream, clamp(vWorldPos.xz / uFieldSize + 0.5, 0.0, 1.0));
+        float channel = smoothstep(0.02, 0.25, stream.r);
 
         // Each mode writes the lit surface and, separately, anything emissive
         // or reflected. Environmental light (caustics) only ever touches the
@@ -274,31 +298,44 @@ function createTerrainMaterial() {
         } else if (uMode < 1.5) {
           // A — Geological. Height, normal and world position only; static.
           //
-          // Bedding is about twelve beds across the whole relief — scaled to
-          // the elevation, so it holds up on any landform — each with its own
-          // value, split by a thin darker parting. The beds are warped by a
-          // slow noise so they read as deposited layers rather than as
-          // contour lines of the height, and they show most on steep faces,
-          // where real bedding is exposed. The previous version drew bands at
-          // a fixed 0.11 world units and darkened them by at most ~8%, which
-          // at default strength was simply not visible.
-          float E = max(uElevation, 0.001);
+          // Form first, bedding second. About nine broad beds across the
+          // relief, each fading into the next over nearly half its thickness,
+          // so there is never a line between them. They dip gently one way
+          // and are folded by a slow warp, so on a hillside they cross the
+          // contours at an angle instead of tracing them. They show only on
+          // the steeper faces, ranked against this landform's own slopes;
+          // flats and basin floors stay plain.
+          //
+          // The previous pass drew a thin dark parting at every bed boundary.
+          // Beds cut at a constant height are, in plan, contour lines, so the
+          // partings drew a topographic map over the terrain.
           float h = (vHeight - uWaterLevel) * uHeightInfluence;
           float exposure = 1.0 - clamp(n.y, 0.0, 1.0);
+          float exposureS = 1.0 - clamp(ns.y, 0.0, 1.0);
 
-          float warp = (valueNoise(vWorldPos.xz * 0.12) - 0.5) * 0.9
-                     + (valueNoise(vWorldPos.xz * 0.37 + 4.0) - 0.5) * 0.3;
-          float bedCoord = (vWorldPos.y / E + 0.5) * 12.0 + warp;
-          float bedTone = 0.76 + 0.36 * hash21(vec2(floor(bedCoord), 3.7));
-          float bedEdge = min(fract(bedCoord), 1.0 - fract(bedCoord));
-          float aa = fwidth(bedCoord);
-          float parting = (1.0 - smoothstep(0.0, 0.05 + aa * 1.2, bedEdge))
-                        * (1.0 - smoothstep(0.15, 0.45, aa));
-          float show = uStrata * (0.3 + 0.7 * smoothstep(0.05, 0.55, exposure));
+          vec2 dip = vec2(0.055, 0.025);
+          float fold = (valueNoise(vWorldPos.xz * 0.07 + 2.0) - 0.5) * 1.2
+                     + (valueNoise(vWorldPos.xz * 0.19 + 9.0) - 0.5) * 0.35;
+          float bedCoord = ((vWorldPos.y + dot(vWorldPos.xz, dip)) / E + 0.5) * 9.0 + fold;
+          // Beds alternate harder (paler) and softer (darker), each with its
+          // own amount, so neighbours always differ but never evenly.
+          float bedIndex = floor(bedCoord);
+          float toneA = 0.5 + (mod(bedIndex, 2.0) - 0.5) * (0.45 + 0.55 * hash21(vec2(bedIndex, 3.7)));
+          float toneB = 0.5 + (mod(bedIndex + 1.0, 2.0) - 0.5) * (0.45 + 0.55 * hash21(vec2(bedIndex + 1.0, 3.7)));
+          float tone = mix(toneA, toneB, smoothstep(0.5, 1.0, fract(bedCoord)));
+          // Darker beds a touch cooler, paler ones a touch greyer.
+          vec3 bedTint = mix(vec3(0.74, 0.75, 0.84), vec3(1.2, 1.17, 1.15), tone);
+
+          // Smooth normal, so exposure varies across the form rather than
+          // flickering facet by facet. Beds also thin out along their length
+          // (lens), as real layers pinch out, which breaks the repetition.
+          float exposed = smoothstep(uExposureLo, uExposureHi, exposureS);
+          float lens = 0.7 + 0.3 * valueNoise(vWorldPos.xz * 0.08 + 13.0);
+          float farFade = 1.0 - smoothstep(0.3, 0.7, fwidth(bedCoord));
+          float show = uStrata * exposed * lens * farFade;
 
           vec3 base = rampColor(h);
-          base *= mix(1.0, bedTone, show);
-          base *= 1.0 - parting * show * 0.5;
+          base *= mix(vec3(1.0), bedTint, show);
 
           // Mineral grain. Two scales, barely there — enough that the surface
           // is not flat colour, not enough to read as texture.
@@ -319,15 +356,41 @@ function createTerrainMaterial() {
           // threshold on sediment, so a thin dusting reads as nothing and only
           // real accumulation lights up. The pulse never touches the base.
           vec3 dormant = mix(rampColor(vHeight - uWaterLevel) * 0.38, uDeepBasin, 0.25);
-          float residueMask = smoothstep(0.12, 0.62, sed);
           vec3 residue = mix(dormant, uSedimentTint * 0.85, residueMask * uActivityInfluence);
           lit = residue * (ambient + uLightColor * wrap * 0.7);
+
+          // The glow belongs to the deposit rather than being laid over it:
+          // it takes the surface's own shading (smooth normal, so it follows
+          // the form without facets), and a deposit seen through water glows
+          // dimmer the deeper it lies. Flat, unshaded emission was what made
+          // it read as projected.
+          float held = 0.6 + 0.6 * (dot(ns, uLightDir) * 0.5 + 0.5);
+          float through = dn > 0.0 ? 0.55 + 0.45 * exp(-dn * 3.0) : 1.0;
 
           // Slow and spatial, so it travels across the ground rather than
           // flashing the whole scene at once.
           float pulse = 0.65 + 0.35 * sin(uTime * 0.4 + vWorldPos.x * 0.11 + vWorldPos.z * 0.08);
-          emit += uSedimentTint * residueMask * residueMask * uPulse * 0.18 * pulse;
-          emit += uMint * pow(act, 1.6) * uPulse * 0.9 * pulse;
+          emit += uSedimentTint * residueMask * residueMask * uPulse * 0.18 * pulse * held * through;
+          emit += uMint * pow(act, 1.6) * uPulse * 0.9 * pulse * held * through;
+
+          // Relief (Scatter only): the landform given body. Plateaus stand
+          // paler than the ground below them; the rounded shoulder where a
+          // slope turns over into a top catches light, as a thick edge does;
+          // the steep foot just above the water sits in its own shade. All on
+          // the smooth normal, so it follows form, not facets.
+          if (uRelief > 0.0) {
+            // A stream's own channel walls are not landform, so the shoulder
+            // light must not catch them: it outlined every carved channel in
+            // a pale ring.
+            float above = vHeight - uWaterLevel;
+            float plateau = smoothstep(0.02, 0.35, above);
+            float shoulder = smoothstep(0.5, 0.82, ns.y) * (1.0 - smoothstep(0.9, 0.99, ns.y))
+                           * smoothstep(0.0, 0.08, above) * (1.0 - channel);
+            float foot = (1.0 - smoothstep(0.0, 0.12, above)) * smoothstep(0.12, 0.45, 1.0 - ns.y) * (1.0 - channel);
+            lit *= mix(1.0, mix(0.82, 1.45, plateau) * (1.0 - 0.3 * foot), uRelief);
+            lit = mix(lit, lit * vec3(1.04, 1.0, 1.12), plateau * uRelief);
+            emit += uSedimentTint * shoulder * 0.12 * uRelief;
+          }
 
         } else {
           // C — Living membrane. The normal is pushed around by a slow
@@ -385,15 +448,30 @@ function createTerrainMaterial() {
         // facing threshold, times a pattern covering ~12%: together about
         // 1-2% of the terrain, then half-hidden by the water above. That is
         // why the slider did almost nothing.
+        // Water veins, in every reading of the ground: the banks a stream
+        // keeps damp are darker and cooler, and the material it settles
+        // along them is paler and finer. The water itself is its own
+        // surface, lying in the channel.
+        // Moderate: darker banks made the water a dark crease in the ground.
+        lit *= 1.0 - 0.28 * stream.r;
+        lit *= mix(vec3(1.0), vec3(0.9, 0.94, 1.1), stream.r);
+        lit = mix(lit, lit * 1.25 + uSedimentTint * 0.03, stream.g * 0.6);
+
         if (uCaustics > 0.0 && uMode > 0.5) {
-          float dn = (uWaterY - vWorldPos.y) / max(uElevation, 0.001);
           float reach = dn >= 0.0 ? exp(-dn * 3.5) : 1.0 - smoothstep(0.0, 0.06, -dn);
           float receive = 0.35 + 0.65 * clamp(ns.y, 0.0, 1.0);
-          // Dormant keeps it lower so it never competes with residue;
-          // Membrane is already pale, so the same light reads much stronger.
-          float modeGain = uMode > 2.5 ? 0.55 : uMode > 1.5 ? 0.45 : 1.0;
-          float c = reflectedLight(vWorldPos.xz, uTime) * reach * receive * uCaustics * modeGain;
-          lit += (lit * 0.85 + uCaustic * 0.07) * c;
+          float c = reflectedLight(vWorldPos.xz, uTime) * reach * receive * uCaustics;
+          if (uMode > 1.5 && uMode < 2.5) {
+            // Dormant: the light gathers in the deposits. Gated by residue
+            // and purely multiplicative, so dark untouched ground barely
+            // catches it and it emerges with the sediment, slowly, instead of
+            // sitting over the basin as a separate layer.
+            lit += lit * c * (0.15 + 0.85 * residueMask) * 1.3;
+          } else {
+            // Membrane is already pale, so the same light reads stronger.
+            float modeGain = uMode > 2.5 ? 0.55 : 1.0;
+            lit += (lit * 0.85 + uCaustic * 0.07) * c * modeGain;
+          }
         }
 
         gl_FragColor = vec4(lit + emit, 1.0);
@@ -500,7 +578,9 @@ function createWaterMaterial() {
         // the terrain sits in.
         vec2 fuv = vWorldPos.xz / uFieldSize + 0.5;
         vec4 sim = texture2D(uSim, clamp(fuv, 0.0, 1.0));
-        float ground = (sim.b - 0.5) * uElevation + sim.r * uSedScale * uSedLift;
+        // B carries the ground height over -0.5…1.5: the relief lifts land
+        // above 1 and deepens basins below 0, which 0…1 clipped.
+        float ground = (sim.b * 2.0 - 1.0) * uElevation + sim.r * uSedScale * uSedLift;
         float depth = vWorldPos.y - ground;
         if (depth <= 0.0) discard;
         vec2 edgeDist = min(fuv, 1.0 - fuv);
@@ -566,6 +646,135 @@ function createWaterMaterial() {
 }
 
 /**
+ * The water in a stream's channel: a shallow translucent body, level across
+ * its width (lib/streams.js shapes it). It reads the way the basin water
+ * does — by what it reflects and by how much ground shows through it — not
+ * by drawn edges:
+ *
+ *   - the banks rise through it, so the depth buffer draws the shoreline,
+ *     and it thins to nothing toward that shoreline by its real depth
+ *   - its colour is the basin water's, mixed with the sky it reflects,
+ *     which is broad and slow across the whole width
+ *   - the ripples are in metres, large and soft, drifting downstream —
+ *     faster where the ground is steep
+ *
+ * It rides the ground exactly as the terrain does — sediment lift and the
+ * Dormant/Membrane breathing — so it never parts from its bed.
+ */
+function createStreamWaterMaterial() {
+  return new THREE.ShaderMaterial({
+    fog: true,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    uniforms: THREE.UniformsUtils.merge([
+      THREE.UniformsLib.fog,
+      {
+        uSediment: { value: null },
+        uFieldSize: { value: FIELD_SIZE },
+        uSedScale: { value: SED_DISPLAY },
+        uSedLift: { value: 1 },
+        uTime: { value: 0 },
+        uMode: { value: 0 },
+        uPulse: { value: 0 },
+        uMembrane: { value: 0 },
+        // The basin water's own palette, so stream and basin are one water.
+        // A paler horizon made the grazing reflection read as mist.
+        uShallow: hexUniform('#262B5C'),
+        uHorizon: hexUniform('#4E5288'),
+        uZenith: hexUniform('#12153A'),
+        uGlint: hexUniform('#D8D3F2'),
+        uLightDir: { value: new THREE.Vector3(-0.6, 0.42, -0.55).normalize() },
+      },
+    ]),
+    vertexShader: /* glsl */ `
+      attribute vec4 aFlow;
+      uniform sampler2D uSediment;
+      uniform float uFieldSize;
+      uniform float uSedScale;
+      uniform float uSedLift;
+      uniform float uTime;
+      uniform float uMode;
+      uniform float uPulse;
+      uniform float uMembrane;
+      varying vec2 vUv;
+      varying vec4 vFlow;
+      varying vec3 vWorldPos;
+      #include <common>
+      #include <fog_pars_vertex>
+      void main() {
+        vUv = uv;
+        vFlow = aFlow;
+        vec2 fuv = position.xz / uFieldSize + 0.5;
+        float sed = texture2D(uSediment, fuv).r * uSedScale;
+        // The terrain's own movements, so the water stays in its bed.
+        float breathe = 0.0;
+        if (uMode > 1.5 && uMode < 2.5) {
+          breathe = sin(uTime * 0.35 + position.x * 0.18 + position.z * 0.14) * uPulse * sed * 0.6;
+        } else if (uMode > 2.5) {
+          breathe = sin(uTime * 0.22 + position.x * 0.31) * cos(uTime * 0.17 + position.z * 0.27) * uMembrane * 0.09;
+        }
+        vec3 p = position;
+        p.y += sed * uSedLift + breathe;
+        vec4 world = modelMatrix * vec4(p, 1.0);
+        vWorldPos = world.xyz;
+        vec4 mvPosition = viewMatrix * world;
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uTime;
+      uniform vec3 uShallow;
+      uniform vec3 uHorizon;
+      uniform vec3 uZenith;
+      uniform vec3 uGlint;
+      uniform vec3 uLightDir;
+      varying vec2 vUv;
+      varying vec4 vFlow;
+      varying vec3 vWorldPos;
+      #include <common>
+      #include <fog_pars_fragment>
+      ${NOISE_GLSL}
+      void main() {
+        float t = uTime * vFlow.y;
+        // Broad, soft ripples in metres, drifting downstream.
+        vec2 q = vec2(vUv.x * 1.4, vUv.y * 0.9 - t * 0.6);
+        float a = valueNoise(q);
+        float b = valueNoise(q * 2.1 + vec2(4.3, -t * 0.4));
+        vec3 nrm = normalize(vec3((a - 0.5) * 0.22 + (b - 0.5) * 0.08, 1.0, (b - 0.5) * 0.12));
+
+        vec3 viewDir = normalize(cameraPosition - vWorldPos);
+        float facing = clamp(dot(nrm, viewDir), 0.0, 1.0);
+        float fres = 0.04 + 0.96 * pow(1.0 - facing, 4.0);
+        vec3 r = reflect(-viewDir, nrm);
+        vec3 sky = mix(uHorizon, uZenith, smoothstep(-0.02, 0.5, r.y));
+        vec3 col = mix(uShallow, sky, 0.3 + 0.6 * fres);
+        // Movement across the whole width: soft broad bands of reflected
+        // light where the ripples tilt toward the sky, drifting downstream;
+        // one narrow, dim glint.
+        float sheen = smoothstep(0.55, 0.9, a * 0.7 + b * 0.3);
+        float glint = pow(max(dot(nrm, normalize(uLightDir + viewDir)), 0.0), 80.0);
+        col += uHorizon * sheen * 0.35 + uGlint * glint * 0.25;
+
+        // Depth here (from the vertex), so it thins toward its shore rather
+        // than ending at a line, and vanishes where it would hang over a
+        // drop it cannot be in.
+        float depth = vFlow.z;
+        float shore = smoothstep(0.0, 0.012, depth);
+        float overhang = 1.0 - smoothstep(0.1, 0.25, depth);
+        float side = 1.0 - smoothstep(0.85, 1.0, abs(vFlow.w));
+        float alpha = vFlow.x * shore * overhang * side * (0.62 + 0.25 * fres + sheen * 0.1 + glint * 0.2);
+        gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.8));
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+        #include <fog_fragment>
+      }
+    `,
+  })
+}
+
+/**
  * The sediment field: base terrain from the height field, a tidal plane, and
  * the running simulation written into a texture the terrain shader reads.
  */
@@ -577,11 +786,27 @@ export default function Terrain({
   running,
   wireframe,
   shader,
+  streams,
 }) {
   const { resolution, elevation, waterLevel } = params
 
   const material = useMemo(() => createTerrainMaterial(), [])
   const waterMaterial = useMemo(() => createWaterMaterial(), [])
+  const streamWaterMaterial = useMemo(() => createStreamWaterMaterial(), [])
+
+  // The water lying in each stream's channel (lib/streams.js builds it).
+  const streamGeometry = useMemo(() => {
+    const w = streams?.water
+    if (!w) return null
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(w.position, 3))
+    geo.setAttribute('uv', new THREE.BufferAttribute(w.uv, 2))
+    geo.setAttribute('aFlow', new THREE.BufferAttribute(w.flow, 4))
+    geo.setIndex(w.index)
+    geo.computeBoundingSphere()
+    return geo
+  }, [streams])
+  useEffect(() => () => streamGeometry?.dispose(), [streamGeometry])
 
   // One texture carries the simulation to the GPU: R = sediment, G = activity,
   // B = base ground height (so the water surface knows how deep it is).
@@ -598,6 +823,18 @@ export default function Terrain({
 
   material.uniforms.uSediment.value = texture
   waterMaterial.uniforms.uSim.value = texture
+
+  // The streams' ground material, uploaded when the world supplies a new one.
+  const streamTexture = useMemo(() => {
+    const t = new THREE.DataTexture(new Uint8Array(STREAM_RES * STREAM_RES * 4), STREAM_RES, STREAM_RES, THREE.RGBAFormat)
+    t.minFilter = THREE.LinearFilter
+    t.magFilter = THREE.LinearFilter
+    t.wrapS = THREE.ClampToEdgeWrapping
+    t.wrapT = THREE.ClampToEdgeWrapping
+    t.needsUpdate = true
+    return t
+  }, [])
+  const streamUploaded = useRef(undefined)
 
   const geometry = useMemo(() => {
     const grid = buildHeightGrid(field, resolution)
@@ -619,6 +856,17 @@ export default function Terrain({
     // Smooth normals, for the membrane and for where water light lands. The
     // other modes keep deriving faceted normals per fragment.
     geo.computeVertexNormals()
+
+    // Rank this landform's slopes once, so Geological can put strata on its
+    // steeper faces whatever the terrain: median exposure among the default
+    // settings is ~0.025, on a rough landform ~0.16.
+    const ny = geo.attributes.normal
+    const exposure = new Float32Array(ny.count)
+    for (let k = 0; k < ny.count; k++) exposure[k] = 1 - ny.getY(k)
+    exposure.sort()
+    const lo = exposure[Math.floor(exposure.length * 0.45)]
+    const hi = exposure[Math.floor(exposure.length * 0.85)]
+    geo.userData.exposureRange = [lo, Math.max(hi, lo + 0.01)]
     // Positions changed after construction, so the culling volumes have to be
     // rebuilt or the mesh can be culled at the wrong moment.
     geo.computeBoundingSphere()
@@ -629,7 +877,10 @@ export default function Terrain({
   const waterY = (waterLevel - 0.5) * elevation
   const waterRef = useRef(null)
   const accumulator = useRef(0)
-  const uploaded = useRef(-1)
+  // Which simulation, at which version, is in the texture. The Scatter view
+  // swaps in a different (history) simulation, whose version number alone
+  // could match the live one's and leave the old texture in place.
+  const uploaded = useRef({ sim: null, version: -1 })
   const liveGeometry = useRef(null)
 
   useFrame((state, delta) => {
@@ -654,39 +905,64 @@ export default function Terrain({
     set('uWaterLevel', waterLevel)
     set('uSedLift', elevation * SEDIMENT_LIFT)
     set('uElevation', elevation)
+    const [exposureLo, exposureHi] = geometry.userData.exposureRange ?? [0.03, 0.1]
+    set('uExposureLo', exposureLo)
+    set('uExposureHi', exposureHi)
     material.wireframe = wireframe
 
     // No shader descriptor means the Field view, which is mode 0 and behaves
     // exactly as it did before the study existed.
     set('uTime', t)
     set('uMode', shader ? shader.mode : 0)
+    const streamMaterial = streams?.material
+    if (streamMaterial !== streamUploaded.current) {
+      streamUploaded.current = streamMaterial
+      if (streamMaterial && streamMaterial.res === streamTexture.image.width) streamTexture.image.data.set(streamMaterial.data)
+      else streamTexture.image.data.fill(0)
+      streamTexture.needsUpdate = true
+    }
+    set('uStream', streamTexture)
     // Everything moves, nothing moves fast: a ~50s tide. The caustic band
     // follows it, so light on the ground and the surface above stay together.
     const tideY = waterY + Math.sin(t * 0.125) * elevation * 0.012
     set('uWaterY', tideY)
     set('uCaustics', shader ? shader.caustics : 0)
+
+    // One water for every tab: the depth-aware veil pooled in the basins.
+    // Clarity follows the reading of the ground: the Field view's plain ramp
+    // takes a little more body; Membrane, pale everywhere, needs the most to
+    // stay a separate surface. Dormant's was 0.6 — too clear, and its basins
+    // read as empty pits.
+    const water = waterMaterial.uniforms
+    const setWater = (name, value) => {
+      if (water[name]) water[name].value = value
+    }
+    const mode = shader ? shader.mode : 0
+    setWater('uSim', texture)
+    setWater('uTime', t)
+    setWater('uWater', shader ? shader.water : 0.85)
+    setWater('uLight', shader ? shader.caustics : 0)
+    setWater('uElevation', elevation)
+    setWater('uSedLift', elevation * SEDIMENT_LIFT)
+    setWater('uClarity', mode === 0 ? 1.15 : mode === 2 ? 0.9 : mode === 3 ? 1.3 : 1)
+
+    // The streams' water rides the same ground: sediment lift and breathing.
+    const sw = streamWaterMaterial.uniforms
+    sw.uSediment.value = texture
+    sw.uTime.value = t
+    sw.uSedLift.value = elevation * SEDIMENT_LIFT
+    sw.uMode.value = mode
+    sw.uPulse.value = shader ? shader.pulse : 0
+    sw.uMembrane.value = shader ? shader.membrane : 0
+
     if (shader) {
       set('uHeightInfluence', shader.heightInfluence)
       set('uStrata', shader.strata)
       set('uActivityInfluence', shader.activity)
+      set('uRelief', shader.relief ?? 0)
       set('uPulse', shader.pulse)
       set('uFresnel', shader.fresnel)
       set('uMembrane', shader.membrane)
-      const water = waterMaterial.uniforms
-      const setWater = (name, value) => {
-        if (water[name]) water[name].value = value
-      }
-      setWater('uSim', texture)
-      setWater('uTime', t)
-      setWater('uWater', shader.water)
-      setWater('uLight', shader.caustics)
-      setWater('uElevation', elevation)
-      setWater('uSedLift', elevation * SEDIMENT_LIFT)
-      // Dormant's record mostly settles in the basins, i.e. under the water,
-      // so the surface is kept clearer there rather than hiding it. Membrane
-      // is pale everywhere, so its water needs more body to stay a separate
-      // surface rather than a tint on the same skin.
-      setWater('uClarity', shader.mode === 2 ? 0.6 : shader.mode === 3 ? 1.3 : 1)
     }
 
     // Release the previous grid once a new resolution has taken over.
@@ -708,14 +984,15 @@ export default function Terrain({
       if (steps === MAX_STEPS_PER_FRAME) accumulator.current = 0
     }
 
-    if (sim.version !== uploaded.current) {
-      uploaded.current = sim.version
+    if (sim !== uploaded.current.sim || sim.version !== uploaded.current.version) {
+      uploaded.current = { sim, version: sim.version }
       const { sediment, activity, height } = sim
       for (let i = 0; i < sediment.length; i++) {
         const p = i * 4
         pixels[p] = Math.min(255, (sediment[i] / SED_DISPLAY) * 255)
         pixels[p + 1] = Math.min(255, activity[i] * 255)
-        pixels[p + 2] = Math.min(255, Math.max(0, height[i] * 255))
+        // Height over -0.5…1.5 (see the water shader), so relief survives.
+        pixels[p + 2] = Math.min(255, Math.max(0, ((height[i] + 0.5) / 2) * 255))
         pixels[p + 3] = 255
       }
       texture.needsUpdate = true
@@ -726,44 +1003,20 @@ export default function Terrain({
     <group>
       <mesh geometry={geometry} material={material} />
 
-      {/* The Field view keeps its original water; the shader study gets the
-          shared shaded surface, bounded to the terrain.
-
-          The keys are load-bearing. Without them React reuses the same
-          <mesh> across the switch, and react-three-fiber "resets" the removed
-          material prop to a blank MeshBasicMaterial — white, unlit — which is
-          what painted the Field view pale after Shaders → Field. Keyed, each
-          water is its own object and is unmounted cleanly. */}
-      {shader ? (
-        <mesh
-          key="study-water"
-          position={[0, waterY, 0]}
-          rotation={[-Math.PI / 2, 0, 0]}
-          ref={waterRef}
-          material={waterMaterial}
-        >
-          <planeGeometry args={[FIELD_SIZE, FIELD_SIZE, 1, 1]} />
-        </mesh>
-      ) : (
+      {/* One water for every tab: bounded to the terrain, pooled in its
+          basins. (The Field view used to have its own plane, seven times
+          the field's size; the tabs then showed different worlds.) */}
       <mesh
-        key="field-water"
+        key="water"
         position={[0, waterY, 0]}
         rotation={[-Math.PI / 2, 0, 0]}
         ref={waterRef}
+        material={waterMaterial}
       >
-        <planeGeometry args={[FIELD_SIZE * 7, FIELD_SIZE * 7]} />
-        <meshStandardMaterial
-          color="#2A3060"
-          emissive="#565C96"
-          emissiveIntensity={0.32}
-          roughness={0.45}
-          metalness={0.12}
-          transparent
-          opacity={0.5}
-          depthWrite={false}
-        />
+        <planeGeometry args={[FIELD_SIZE, FIELD_SIZE, 1, 1]} />
       </mesh>
-      )}
+
+      {streamGeometry && <mesh geometry={streamGeometry} material={streamWaterMaterial} renderOrder={1} />}
     </group>
   )
 }

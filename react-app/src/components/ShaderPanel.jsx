@@ -10,7 +10,7 @@ export const MODES = [
     id: 'geological',
     value: 1,
     label: 'Geological',
-    note: 'Height, normal and world position. Static. About twelve warped beds across the relief, each its own value with a thin parting between, strongest on steep faces where bedding is exposed.',
+    note: 'Height, normal and world position. Static. Broad, softly blended beds that dip and fold, shown only on this landform’s steeper faces — form first, bedding second.',
     sliders: [
       {
         key: 'heightInfluence',
@@ -26,7 +26,7 @@ export const MODES = [
         min: 0,
         max: 1,
         step: 0.01,
-        hint: 'Bed contrast and partings. Scaled to the relief, so it reads on any landform',
+        hint: 'How strongly the beds show on exposed faces. Flats and basins stay plain',
       },
     ],
   },
@@ -34,7 +34,7 @@ export const MODES = [
     id: 'dormant',
     value: 2,
     label: 'Dormant / Residual',
-    note: 'Sediment, activity and time. Untouched ground stays dark whatever the sliders say — residue and pulse both sit behind a threshold, so only real accumulation lights up.',
+    note: 'Sediment, activity and time. Untouched ground stays dark whatever the sliders say. Light emerges with the deposits: it takes their shading, dims under water, and water light gathers in them rather than over them.',
     sliders: [
       {
         key: 'activity',

@@ -596,3 +596,135 @@
     flex: 1;
   }
 }
+
+/* --- scatter study ------------------------------------------------------ */
+
+.map-note {
+  margin: 0;
+}
+
+.growth-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+  margin: 1rem 0 0.9rem;
+}
+
+.growth-row .slider-slot {
+  flex: 1;
+}
+
+.growth-row .control-button {
+  flex: 0 0 auto;
+  min-width: 5.2rem;
+}
+
+.rule-list {
+  opacity: 0.45;
+}
+
+.rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0 0 0.9rem;
+  padding: 0.45rem 0 0.45rem 0.6rem;
+  border-left: 1px solid rgba(141, 134, 184, 0.22);
+  list-style: none;
+  font-size: 0.66rem;
+  line-height: 1.35;
+}
+
+/* The why first, the expression under it: rules read as reasons. */
+.rule-list .rule-why {
+  color: rgba(198, 191, 230, 0.8);
+}
+
+.rule-list .rule-expr {
+  font-size: 0.62rem;
+  color: rgba(141, 134, 184, 0.55);
+}
+
+.rule-list li {
+  display: flex;
+  flex-direction: column;
+}
+
+.rule-expr {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+.layer-varies {
+  margin-bottom: 0.4rem;
+}
+
+.layer-count {
+  margin: 0;
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+  color: rgba(185, 178, 218, 0.7);
+}
+
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.legend-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid rgba(141, 134, 184, 0.16);
+  border-radius: 2px;
+  background: transparent;
+  font-family: var(--body);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 400ms ease, background 400ms ease;
+}
+
+.legend-row:hover {
+  border-color: rgba(185, 178, 218, 0.4);
+  background: rgba(185, 178, 218, 0.05);
+}
+
+.legend-row:focus-visible {
+  outline: 1px solid rgba(141, 134, 184, 0.5);
+  outline-offset: 2px;
+}
+
+.legend-name {
+  font-size: 0.64rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(198, 191, 230, 0.85);
+}
+
+.legend-summary {
+  font-size: 0.68rem;
+  line-height: 1.4;
+  color: rgba(141, 134, 184, 0.6);
+}
+
+.legend-count {
+  font-size: 0.64rem;
+  font-variant-numeric: tabular-nums;
+  color: rgba(185, 178, 218, 0.6);
+}
+
+.study-toggle {
+  width: 100%;
+  margin-top: 0.75rem;
+}
+
+.stream-note {
+  margin-top: 1.1rem;
+}

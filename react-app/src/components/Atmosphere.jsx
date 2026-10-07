@@ -116,11 +116,11 @@ function Sky() {
  * the view is looking at — the 26-unit terrain field or the much smaller
  * sediment volume — so they read as suspended material at either scale.
  */
-export default function Atmosphere({ spread = FIELD_SIZE * 1.5, lift = 4.5 }) {
+export default function Atmosphere({ spread = FIELD_SIZE * 1.5, lift = 4.5, motes = true }) {
   return (
     <>
       <Sky />
-      <Motes spread={spread} lift={lift} />
+      {motes && <Motes spread={spread} lift={lift} />}
     </>
   )
 }

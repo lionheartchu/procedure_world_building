@@ -67,14 +67,10 @@
             "id": "d22a879186130f51",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "backlog.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "backlog"
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Graph view"
             }
           }
         ],
@@ -140,7 +136,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300
+    "width": 213.1484375
   },
   "right": {
     "id": "da6fc777ca74d32d",
@@ -247,23 +243,34 @@
   },
   "active": "d22a879186130f51",
   "lastOpenFiles": [
-    "react-app/dist/assets/index-VEDzAfSb.css",
-    "react-app/dist/assets/index-BLncyhHo.js",
-    "react-app/dist/assets/index-D8wUesUq.js",
-    "react-app/dist/assets/index-UnOW1mfN.js",
-    "react-app/dist/assets/index-H-LpYXD-.js",
-    "react-app/dist/assets/index-BlRh5qcE.js",
-    "react-app/dist/assets/index-CnyhSkWq.js",
-    "react-app/dist/assets/index-BvdAtfpm.js",
-    "react-app/dist/assets/index-z9ReZYjT.js",
-    "react-app/dist/assets/index-DrzeGIRb.js",
-    "react-app/dist/assets/index-DJwTb1je.js",
+    "docs/references/Ambient Particles_ref.png",
+    "docs/references/Residual Ecology_ Ambient Particles.png",
+    "react-app/dist/assets/index-CYUxVZ2n.js",
+    "docs/images/07-ecology.png",
+    "docs/images/07-details.png",
+    "docs/images/07-before.png",
+    "react-app/dist/assets/index-D7ViEW8a.js",
+    "react-app/dist/assets/index-23okhVlA.js",
+    "docs/07-air-study.md",
+    "docs/images/07-panel.png",
+    "docs/images/07-field.png",
+    "docs/images/07-colony.png",
+    "docs/images/07-lift.png",
+    "docs/images/07-close.png",
+    "docs/images/07-air.png",
+    "react-app/dist/assets/index-CtJis1kL.js",
+    "react-app/src/components/AmbientAir.jsx",
+    "react-app/src/lib/air.js",
+    "react-app/dist/index.html",
+    "react-app/dist/assets/index-Cf_8ydfv.css",
+    "react-app/dist/assets/index-BQnR_-nA.js",
+    "react-app/dist/assets",
+    "docs/06-passages-study.md",
+    "docs/05-scatter-study.md",
+    "docs/03-voxel-study.md",
+    "backlog.md",
     "docs/04-shader-study.md",
     "docs/references/README.md",
-    "docs/references/vox-ref4.png",
-    "docs/references/vox-ref3.png",
-    "docs/references/vox-ref2.png",
-    "docs/references/vox-ref1.png",
     "docs/02-sediment-simulation.md",
     "docs/01-noise-study.md",
     "PROJECT_DIRECTION.md",
@@ -281,17 +288,6 @@
     "react-app/node_modules/protobufjs/ext/debug/README.md",
     "react-app/node_modules/protobufjs/google/README.md",
     "react-app/node_modules/re2js/README.md",
-    "react-app/node_modules/yargs/README.md",
-    "react-app/node_modules/yargs/CHANGELOG.md",
-    "react-app/node_modules/websocket-driver/README.md",
-    "react-app/node_modules/websocket-driver/LICENSE.md",
-    "react-app/node_modules/lodash.camelcase/README.md",
-    "react-app/node_modules/undici-types/README.md",
-    "docs/images/03-cohesive-fractured.png",
-    "docs/images/03-over-fragmented.png",
-    "docs/images/03-fractured-ridge.png",
-    "docs/images/03-cohesive-mass.png",
-    "react-app/dist/favicon.svg",
-    "react-app/src/assets/vite.svg"
+    "react-app/node_modules/yargs/README.md"
   ]
 }

@@ -10,6 +10,11 @@ procedural world, rather than as decoration on top of it.
 > `04-dormant.png`, `04-membrane.png` and place them under each section below.
 > The comparison only works if the camera does not move between them.
 
+> **Since this study:** the live app now renders every tab on one revised
+> world — the base field with relief and water veins, and one shared water
+> surface (see [study 06](06-passages-study.md)). The numbers and figures here
+> describe the original base the study was made on.
+
 ## Question
 
 How can the same procedural world be perceived differently through material and
@@ -33,8 +38,9 @@ the reason should be obvious.
 
 **Reads:** height · normal · world position
 
-**Changes:** colour ramp by elevation · warped bedding (tone per bed + thin
-partings) · slope darkening for readability · wet darkening at the water line
+**Changes:** colour ramp by elevation · broad, softly blended bedding on the
+steeper faces only · slope darkening for readability · wet darkening at the
+water line
 
 No simulation state and no animation at all — this is the terrain as landform,
 not as something in progress. Slope darkening does most of the work for
@@ -60,6 +66,28 @@ any landform gets the same count). Each bed has its own value (±18%), with a
 thin darker parting between beds, antialiased with `fwidth` and faded out
 where it would alias. A slow noise warps the beds so they read as deposited
 layers rather than as height contours.
+
+**Fourth pass: it read as a contour map.** Beds cut at a constant height are,
+in plan view, contour lines. The thin dark partings drew those lines, evenly,
+over the whole terrain, so the eye read a line pattern on top of the ground.
+The partings are gone. Now:
+
+- **Nine broad beds** across the relief, each blending into the next over
+  half its thickness, so no bed ever ends at a line.
+- **Alternating tone:** beds alternate paler (harder) and darker (softer),
+  each by its own amount, so neighbours always differ but never evenly.
+- **Dip and fold:** the beds dip gently one way and fold slowly, so on a
+  hillside they cross the contours at an angle instead of tracing them.
+- **Exposed faces only.** Faces are ranked against *this landform's own*
+  slopes (the 45th to 85th percentiles of `1 − normal.y`, computed once
+  per geometry). Median slope differs about 6× between the default and a
+  rough landform, so no fixed threshold works on both. The mask uses the
+  smooth normal, so it doesn't flicker facet by facet. Flats and basin
+  floors stay plain.
+- **Lensing:** beds thin out along their length, as real layers pinch out.
+
+Form reads first; the bedding is a tonal variation inside it, and reaches
+about ±20% only on the most exposed faces at full strength.
 
 **Observation:** *[after review]*
 
@@ -87,6 +115,19 @@ value. Everything had *some* sediment, so everything glowed.
 (`smoothstep(0.12, 0.62)`) rather than a curve, so a dusting reads as nothing
 and only real accumulation lights up. Mint sharpened to `pow(act, 1.6)`.
 Untouched ground now stays dark whatever the sliders say.
+
+**Fourth pass: embedded, not projected.** The slow emergence of light was
+right, but it read as an overlay, for two reasons:
+
+- **Flat emission.** The glow was emissive and ignored the surface, so it
+  flattened the form under it. The residue glow and the mint now take the
+  surface's own shading from the smooth normal, and a deposit seen through
+  water glows dimmer the deeper it lies.
+- **Detached water light.** The shared water light ignored the sediment, so
+  it drifted over the basins as a separate layer. In this mode it is now
+  gated by the deposit and purely multiplicative. Untouched ground barely
+  catches it, and it appears *with* the sediment, as light held in the wet
+  deposits.
 
 **Controls:** activity influence, glow / pulse (plus Run / Pause / Reset).
 Entering the mode starts the simulation and leaving it stops again, since the

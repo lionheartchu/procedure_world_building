@@ -27,6 +27,9 @@ deployed at **residual-ecology.web.app**.
 | 02 | [Sediment simulation](docs/02-sediment-simulation.md) | A second, moving field running over the static terrain — supply, transport, deposition |
 | 03 | [Voxel / volume study](docs/03-voxel-study.md) | Density fields, two meshing techniques, and the search for a grown rather than eroded morphology |
 | 04 | [Shader study](docs/04-shader-study.md) | Three material readings of the same terrain — geological, dormant, membrane |
+| 05 | [Scatter study](docs/05-scatter-study.md) | Populating the world with three trace-grown languages — bridgework, membrane bloom, shard / residue — placed by rules over the world's data and its sediment history |
+| 06 | [Water veins — spline study](docs/06-passages-study.md) | Assignment 2: streams traced downhill from high ground into the basins, carving their channels into the one world every tab shares. *Paused; needs later revision* |
+| 07 | [Air — particle study](docs/07-air-study.md) | Assignment 3: a small ecology of air residents — dust, wisps, motes, flakes, haze — moved by one field with quiet pockets, downhill streams and a circulation at each colony |
 
 ## Direction and constraints
 
@@ -56,6 +59,11 @@ box, meshed into a surface.*
 
 *Study 03 — the same system pushed toward rupture. A continuous ridge behind, a
 scree of plates in front.*
+
+![A sparse trace-grown colony: thin spanning strands, translucent sails, frosted residue heaps](docs/images/05-colony.png)
+
+*Study 05 — the same world populated by a colony. Every form is placed by rules
+over the ground, the water and a recorded sediment history.*
 
 > **Captures still needed:** studies 01, 02 and 04 have no screenshots yet — see
 > the note at the top of each of those documents for exactly what to grab.
