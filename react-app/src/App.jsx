@@ -13,6 +13,7 @@ import VolumePanel from './components/VolumePanel'
 import ViewTabs from './components/ViewTabs'
 import ShaderPanel, { MODES } from './components/ShaderPanel'
 import ScatterPanel from './components/ScatterPanel'
+import ExplorePanel from './components/ExplorePanel'
 import ScatterLayers from './components/ScatterLayers'
 import BaseEdge from './components/BaseEdge'
 import LibraryPanel from './components/LibraryPanel'
@@ -21,6 +22,9 @@ import { buildCellGrid, createField, SHAPING_OPS, withRelief } from './lib/field
 import { SedimentSim } from './lib/sediment'
 import { buildWorldData, runHistory } from './lib/worldData'
 import { placeScatter } from './lib/scatter'
+import { buildAccumulation } from './lib/accumulation'
+import { createAccumulationTexture } from './lib/formMaterial'
+import { captureState, restoreState } from './lib/savedState'
 import { buildStreamWater, carveStreams, streamLines, streamMaterial, traceStreams } from './lib/streams'
 import './App.css'
 
@@ -115,11 +119,19 @@ const DEFAULT_SCATTER = {
   // Water veins (assignment 2): part of the shared world, set from here.
   streams: 2,
   streamFlow: 0.5,
-  // The air (assignment 3): one ambient particle layer for the whole scene.
+  // The air (assignment 3): the scene's ambient particles. Rework phases
+  // 1–4: the base atmosphere (dust), residue in moving air (wisps), the
+  // colonies' local air, and the basin haze.
   airDensity: 0.6,
   airDrift: 0.5,
   airCurl: 0.5,
+  airWisps: 0.5,
+  airWispStrength: 0.5,
   airColony: 0.6,
+  airHaze: 0.5,
+  // Explore's Water appearance: how clearly the submerged ground reads.
+  // Presentation only, and only in Explore; 0 is the water as it was.
+  underwater: 0,
 }
 
 /** Scatter settings that trigger a recompute rather than a uniform change. */
@@ -153,7 +165,14 @@ const SCATTER_GROUND = {
   // the basins read as empty pits.
   water: 0.85,
   caustics: 0.35,
+  // The cleaned palette (Terrain.jsx): deep cool shadows, a finer record,
+  // water reflecting the scene's own sky.
+  grade: 1,
 }
+
+/** Explore's staged changes, per state group (see handleExploreChange). */
+const NO_DRAFT = { params: {}, simParams: {}, scatterParams: {} }
+const hasDraft = (draft) => Object.values(draft).some((group) => Object.keys(group).length > 0)
 
 function App() {
   const appRef = useRef(null)
@@ -161,7 +180,10 @@ function App() {
   const [simParams, setSimParams] = useState(DEFAULT_SIM)
   const [running, setRunning] = useState(false)
   const [wireframe, setWireframe] = useState(false)
-  const [view, setView] = useState('field')
+  // Explore is the world as one place, and where the app opens; the studies
+  // it grew from are one menu away, each unchanged.
+  const [view, setView] = useState('explore')
+  const [studiesOpen, setStudiesOpen] = useState(false)
   const [volumeParams, setVolumeParams] = useState(DEFAULT_VOLUME)
   const [volumeStats, setVolumeStats] = useState(null)
   const [shaderParams, setShaderParams] = useState(DEFAULT_SHADER)
@@ -279,6 +301,69 @@ function App() {
   const handleGrowthEnd = useCallback(() => setGrowing(false), [])
   const handleGrow = useCallback(() => setGrowing((value) => !value), [])
 
+  // --- Explore: changes that regenerate the world apply on release --------
+  //
+  // Explore writes the same state the studies do. Controls that only move
+  // uniforms (growth, openness, the air) act live. Controls that regenerate
+  // the world — anything in params or simParams, and the scatter keys in
+  // RECOMPUTE_KEYS — are staged while a hand is on them (the panel shows the
+  // staged value, the world keeps the last applied one) and applied together
+  // when it lets go, in one update. Every stage of the world is derived from
+  // that one applied state in the same render, so the scene can show the old
+  // world or the new one, never a mixture. The studies keep their own
+  // behaviour: their panels write directly, as before.
+  const [draft, setDraft] = useState(NO_DRAFT)
+  const draftRef = useRef(NO_DRAFT)
+  const [regenerating, setRegenerating] = useState(false)
+  const commitTimer = useRef(null)
+
+  const applyDraft = useCallback(() => {
+    const staged = draftRef.current
+    draftRef.current = NO_DRAFT
+    if (Object.keys(staged.params).length) setParams((prev) => ({ ...prev, ...staged.params }))
+    if (Object.keys(staged.simParams).length) setSimParams((prev) => ({ ...prev, ...staged.simParams }))
+    if (Object.keys(staged.scatterParams).length) setScatterParams((prev) => ({ ...prev, ...staged.scatterParams }))
+    setDraft(NO_DRAFT)
+    setRegenerating(false)
+  }, [])
+
+  const handleExploreChange = useCallback(
+    (group, key, value) => {
+      if (group === 'scatterParams' && !RECOMPUTE_KEYS.includes(key)) {
+        handleScatterChange(key, value)
+        return
+      }
+      draftRef.current = { ...draftRef.current, [group]: { ...draftRef.current[group], [key]: value } }
+      setDraft(draftRef.current)
+    },
+    [handleScatterChange],
+  )
+
+  const handleExploreCommit = useCallback(() => {
+    if (!hasDraft(draftRef.current) || commitTimer.current) return
+    // Show "Regenerating" first: the rebuild itself holds the thread.
+    setRegenerating(true)
+    commitTimer.current = setTimeout(() => {
+      commitTimer.current = null
+      applyDraft()
+    }, 30)
+  }, [applyDraft])
+
+  const handleViewChange = useCallback(
+    (next) => {
+      // Nothing staged in Explore is left behind when leaving it.
+      if (commitTimer.current) {
+        clearTimeout(commitTimer.current)
+        commitTimer.current = null
+      }
+      if (hasDraft(draftRef.current)) applyDraft()
+      setView(next)
+      if (next === 'explore') setStudiesOpen(false)
+    },
+    [applyDraft],
+  )
+  useEffect(() => () => clearTimeout(commitTimer.current), [])
+
   // --- scatter study ------------------------------------------------------
   //
   // Each stage is memoised on exactly what it reads, so a slider only redoes
@@ -286,7 +371,9 @@ function App() {
   // landform, water or sediment settings change; the world data when the
   // colony seed changes; placement (~15 ms) for a rule change; and growth,
   // glow, openness and visibility never leave the GPU.
-  const scattering = view === 'scatter'
+  // Explore and the Scatter study show the same complete world, built once.
+  const exploring = view === 'explore'
+  const scattering = view === 'scatter' || exploring
   const history = useMemo(
     () => (scattering ? runHistory(field, simParams, params.waterLevel, deferredScatter.history) : null),
     [scattering, field, simParams, params.waterLevel, deferredScatter.history],
@@ -323,14 +410,37 @@ function App() {
     [world, scatterSeed, bridgeAmount, bridgeReach, bloomAmount, shardAmount, shardAccumulation, streamLook],
   )
 
-  // The air belongs to the whole scene; colonies hold it only where they
-  // exist (the Scatter view).
-  const { airDensity, airDrift, airCurl, airColony } = scatterParams
-  const colonies = scattering ? scatter?.colonies : null
-  const air = useMemo(
-    () => ({ density: airDensity, drift: airDrift, curl: airCurl, colony: airColony, colonies }),
-    [airDensity, airDrift, airCurl, airColony, colonies],
+  // The light held in what the colonies gathered: one grid, read by the
+  // ground, the colony tissue and the forms alike (lib/accumulation.js).
+  const accumulation = useMemo(
+    () => (world && scatter ? createAccumulationTexture(buildAccumulation(world, scatter)) : null),
+    [world, scatter],
   )
+  useEffect(() => () => accumulation?.texture.dispose(), [accumulation])
+  // The air belongs to the whole scene, in every tab; colonies change it
+  // locally where they exist (the Scatter view).
+  const { airDensity, airDrift, airCurl, airWisps, airWispStrength, airColony, airHaze } = scatterParams
+  const colonies = scattering ? scatter?.colonies : null
+  const blooms = scattering ? scatter?.layers.bloom.instances : null
+  const air = useMemo(
+    () => ({
+      density: airDensity,
+      drift: airDrift,
+      curl: airCurl,
+      wisps: airWisps,
+      wispStrength: airWispStrength,
+      colony: airColony,
+      colonies,
+      blooms,
+      haze: airHaze,
+    }),
+    [airDensity, airDrift, airCurl, airWisps, airWispStrength, airColony, colonies, blooms, airHaze],
+  )
+
+  // Explore stands on Scatter's ground, plus its one presentation control
+  // for the water. The studies never see it.
+  const { underwater } = scatterParams
+  const exploreGround = useMemo(() => ({ ...SCATTER_GROUND, underwater }), [underwater])
 
   // The numeric mode the shader branches on, alongside its inputs.
   const shader = useMemo(
@@ -349,25 +459,68 @@ function App() {
   }, [])
   const captureThumbnail = useCallback(() => capture.current?.() ?? null, [])
 
-  /** Everything the Library needs to reproduce this screen. */
+  /** Everything the Library needs to reproduce this screen (lib/savedState.js). */
   const getState = useCallback(
-    () => ({ view, params, simParams, volumeParams, scatterParams }),
-    [view, params, simParams, volumeParams, scatterParams],
+    () => captureState({ view, params, simParams, volumeParams, shaderParams, scatterParams }),
+    [view, params, simParams, volumeParams, shaderParams, scatterParams],
   )
 
   /**
-   * Restore a saved configuration. Merged over the defaults so a configuration
-   * saved by an older build cannot leave a control undefined.
+   * Restore a saved configuration. Each part is merged over the defaults so a
+   * configuration saved by an older build cannot leave a control undefined;
+   * saves from before Explore carry no shader settings and open their study.
    */
-  const applyState = useCallback((config) => {
-    if (['field', 'volume', 'shaders', 'scatter'].includes(config.view)) setView(config.view)
-    if (config.params) setParams({ ...DEFAULT_PARAMS, ...config.params })
-    if (config.simParams) setSimParams({ ...DEFAULT_SIM, ...config.simParams })
-    if (config.volumeParams) setVolumeParams({ ...DEFAULT_VOLUME, ...config.volumeParams })
-    if (config.scatterParams) setScatterParams({ ...DEFAULT_SCATTER, ...config.scatterParams })
-    setRunning(false)
-    setGrowing(false)
-  }, [])
+  const applyState = useCallback(
+    (config) => {
+      const restored = restoreState(config, {
+        params: DEFAULT_PARAMS,
+        simParams: DEFAULT_SIM,
+        volumeParams: DEFAULT_VOLUME,
+        shaderParams: DEFAULT_SHADER,
+        scatterParams: DEFAULT_SCATTER,
+      })
+      if (restored.view) {
+        handleViewChange(restored.view)
+        if (restored.view !== 'explore') setStudiesOpen(true)
+      }
+      if (restored.params) setParams(restored.params)
+      if (restored.simParams) setSimParams(restored.simParams)
+      if (restored.volumeParams) setVolumeParams(restored.volumeParams)
+      if (restored.shaderParams) setShaderParams(restored.shaderParams)
+      if (restored.scatterParams) setScatterParams(restored.scatterParams)
+      setRunning(false)
+      setGrowing(false)
+    },
+    [handleViewChange],
+  )
+
+  // The colony's own structure (branching) grows from the same generation of
+  // values the placement used — the deferred ones — never from a newer slider
+  // value, so no frame shows one world's branching on another's colonies.
+  // Explore always shows the whole colony; the study keeps its solo views.
+  const layerParams = useMemo(
+    () => ({
+      ...scatterParams,
+      seed: deferredScatter.seed,
+      bridgeAmount: deferredScatter.bridgeAmount,
+      shardAccumulation: deferredScatter.shardAccumulation,
+      view: exploring ? 'all' : scatterParams.view,
+    }),
+    [scatterParams, deferredScatter.seed, deferredScatter.bridgeAmount, deferredScatter.shardAccumulation, exploring],
+  )
+
+  // Explore draws the terrain at the default grid: the colonies sit on the
+  // exact field, and a coarse study grid would leave them floating or sunk.
+  const sceneParams = useMemo(
+    () => (exploring && params.resolution !== DEFAULT_PARAMS.resolution ? { ...params, resolution: DEFAULT_PARAMS.resolution } : params),
+    [exploring, params],
+  )
+
+  // What Explore's panel shows: the applied state with anything staged on top.
+  const exploreParams = useMemo(() => ({ ...params, ...draft.params }), [params, draft.params])
+  const exploreSim = useMemo(() => ({ ...simParams, ...draft.simParams }), [simParams, draft.simParams])
+  const exploreScatter = useMemo(() => ({ ...scatterParams, ...draft.scatterParams }), [scatterParams, draft.scatterParams])
+  const scatterPending = RECOMPUTE_KEYS.some((key) => deferredScatter[key] !== scatterParams[key])
 
   // Dormant / Residual has nothing to show until the simulation has run, so
   // entering it starts the sediment. Leaving it — for another mode or for
@@ -413,7 +566,7 @@ function App() {
         // scatter rules read.
         <Scene
           field={field}
-          params={params}
+          params={sceneParams}
           streams={streamLook}
           air={air}
           sim={scattering && history ? history.sim : sim}
@@ -422,15 +575,17 @@ function App() {
           wireframe={wireframe}
           eventSource={appRef}
           onCapture={registerCapture}
-          shader={view === 'shaders' ? shader : scattering ? SCATTER_GROUND : null}
+          shader={view === 'shaders' ? shader : exploring ? exploreGround : scattering ? SCATTER_GROUND : null}
+          accumulation={scattering ? accumulation : null}
         >
           <BaseEdge world={edgeGround} />
           {scattering && world && scatter && (
             <ScatterLayers
               world={world}
               scatter={scatter}
+              accumulation={accumulation}
               streams={streamLook}
-              params={scatterParams}
+              params={layerParams}
               growing={growing}
               onGrowth={handleGrowth}
               onGrowthEnd={handleGrowthEnd}
@@ -441,16 +596,35 @@ function App() {
 
       <header className="app-header">
         <h1 className="brand">Residual Ecology</h1>
-        <ViewTabs value={view} onChange={setView} />
+        <ViewTabs
+          value={view}
+          onChange={handleViewChange}
+          studiesOpen={studiesOpen}
+          onToggleStudies={() => setStudiesOpen((open) => !open)}
+        />
       </header>
 
-      <LibraryPanel
-        getState={getState}
-        captureThumbnail={captureThumbnail}
-        onLoad={applyState}
-      />
+      {/* Secondary: the Library appears with the studies, not in Explore's
+          exhibition view. */}
+      {(studiesOpen || !exploring) && (
+        <LibraryPanel getState={getState} captureThumbnail={captureThumbnail} onLoad={applyState} />
+      )}
 
-      {view === 'volume' ? (
+      {exploring ? (
+        <ExplorePanel
+          params={exploreParams}
+          simParams={exploreSim}
+          scatterParams={exploreScatter}
+          onChange={handleExploreChange}
+          onCommit={handleExploreCommit}
+          regenerating={regenerating || scatterPending}
+          world={world}
+          scatter={scatter}
+          streams={streamLook}
+          growing={growing}
+          onGrow={handleGrow}
+        />
+      ) : view === 'volume' ? (
         <VolumePanel
           params={volumeParams}
           onChange={handleVolumeChange}
@@ -464,7 +638,7 @@ function App() {
           world={world}
           scatter={scatter}
           streams={streamLook}
-          busy={RECOMPUTE_KEYS.some((key) => deferredScatter[key] !== scatterParams[key])}
+          busy={scatterPending}
           growing={growing}
           onGrow={handleGrow}
         />

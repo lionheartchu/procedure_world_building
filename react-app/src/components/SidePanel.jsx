@@ -3,7 +3,7 @@ import Slider from './Slider'
 import SimulationMap from './SimulationMap'
 import { SHAPING_KEYS, SHAPING_OPS } from '../lib/field'
 
-const FIELD_SLIDERS = [
+export const FIELD_SLIDERS = [
   {
     key: 'landformScale',
     label: 'Landform scale',
@@ -39,7 +39,7 @@ const FIELD_SLIDERS = [
   },
 ]
 
-const TERRAIN_SLIDERS = [
+export const TERRAIN_SLIDERS = [
   {
     key: 'elevation',
     label: 'Elevation',
@@ -67,7 +67,7 @@ const TERRAIN_SLIDERS = [
   },
 ]
 
-const SIM_SLIDERS = [
+export const SIM_SLIDERS = [
   {
     key: 'flow',
     label: 'Flow speed',
@@ -94,6 +94,61 @@ const SIM_SLIDERS = [
   },
 ]
 
+/**
+ * The shaping operation and its adaptive amount. Exported so Explore shows
+ * the same control on the same state (`params.shaping`, `params.shapingAmount`).
+ * `onCommit`, when given, is called once a choice is made or a drag ends.
+ * `compact` (Explore) puts the operation's note in a tooltip instead.
+ */
+export function ShapingControl({ params, onChange, onCommit, compact }) {
+  const op = SHAPING_OPS[params.shaping]
+  const shapingSlider = op.slider
+  return (
+    <>
+      <label className="select-slot" title={compact ? op.note : undefined}>
+        <span className="slider-label">Operation</span>
+        <select
+          className="select"
+          value={params.shaping}
+          onChange={(e) => {
+            const next = e.target.value
+            onChange('shaping', next)
+            // The adaptive slider means something different per mode, so it
+            // resets to that mode's own default.
+            onChange('shapingAmount', SHAPING_OPS[next].slider.default)
+            onCommit?.()
+          }}
+        >
+          {SHAPING_KEYS.map((key) => (
+            <option key={key} value={key}>
+              {SHAPING_OPS[key].label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {!compact && <p className="panel-note">{op.note}</p>}
+
+      <div className="slider-list">
+        <Slider
+          definition={{
+            key: 'shapingAmount',
+            label: shapingSlider.label,
+            min: shapingSlider.min,
+            max: shapingSlider.max,
+            step: shapingSlider.step,
+            integer: shapingSlider.step >= 1,
+            hint: 'Meaning follows the selected shaping operation',
+          }}
+          value={params.shapingAmount}
+          onChange={onChange}
+          onCommit={onCommit}
+        />
+      </div>
+    </>
+  )
+}
+
 export default function SidePanel({
   field,
   params,
@@ -106,8 +161,6 @@ export default function SidePanel({
   onReset,
   wireframe,
 }) {
-  const op = SHAPING_OPS[params.shaping]
-  const shapingSlider = op.slider
 
   return (
     <aside
@@ -142,44 +195,7 @@ export default function SidePanel({
       <section className="panel-section">
         <h2 className="section-title">Shaping</h2>
 
-        <label className="select-slot">
-          <span className="slider-label">Operation</span>
-          <select
-            className="select"
-            value={params.shaping}
-            onChange={(e) => {
-              const next = e.target.value
-              onChange('shaping', next)
-              // The adaptive slider means something different per mode, so it
-              // resets to that mode's own default.
-              onChange('shapingAmount', SHAPING_OPS[next].slider.default)
-            }}
-          >
-            {SHAPING_KEYS.map((key) => (
-              <option key={key} value={key}>
-                {SHAPING_OPS[key].label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <p className="panel-note">{op.note}</p>
-
-        <div className="slider-list">
-          <Slider
-            definition={{
-              key: 'shapingAmount',
-              label: shapingSlider.label,
-              min: shapingSlider.min,
-              max: shapingSlider.max,
-              step: shapingSlider.step,
-              integer: shapingSlider.step >= 1,
-              hint: 'Meaning follows the selected shaping operation',
-            }}
-            value={params.shapingAmount}
-            onChange={onChange}
-          />
-        </div>
+        <ShapingControl params={params} onChange={onChange} />
       </section>
 
       <section className="panel-section">

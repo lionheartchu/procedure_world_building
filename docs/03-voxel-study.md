@@ -278,7 +278,7 @@ ridged sheet is "wherever this noise crosses zero", not a path that goes
 somewhere, which is why it read as scattered patches.
 
 The target morphology came from four direction images in
-[`docs/references/`](references/) — `vox-ref1`–`vox-ref4`. They are conceptual
+[`docs/references/concept-studies/`](references/concept-studies/) — `vox-ref1`–`vox-ref4`. They are conceptual
 mockups, not app output: elongated continuity, larger openings connected by
 bridges, and an internal seam network spanning a chamber.
 

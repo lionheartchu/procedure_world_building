@@ -7,7 +7,7 @@ const LANGUAGES = LAYERS.filter((layer) => !layer.accent)
 const BEADS = LAYERS.find((layer) => layer.accent)
 
 /** At most two design controls per language; the rest is protocol. */
-const LAYER_CONTROLS = {
+export const LAYER_CONTROLS = {
   bridgework: [
     { key: 'bridgeAmount', label: 'Amount', min: 0, max: 1, step: 0.01, hint: 'How much structure each colony grows: ribs in its anchor, then strands toward its other forms, then one crossing' },
     { key: 'bridgeReach', label: 'Reach', min: 3, max: 9, step: 0.1, hint: 'Longest crossing tried, in world units' },
@@ -22,7 +22,7 @@ const LAYER_CONTROLS = {
   ],
 }
 
-const HISTORY = {
+export const HISTORY = {
   key: 'history',
   label: 'History',
   min: 0,
@@ -32,7 +32,7 @@ const HISTORY = {
   hint: 'Seconds of sediment record laid down before anything is placed',
 }
 
-const SEED = {
+export const SEED = {
   key: 'seed',
   label: 'Scatter seed',
   min: 1,
@@ -42,7 +42,7 @@ const SEED = {
   hint: 'A different colony on the same world, same rules',
 }
 
-const GROWTH = {
+export const GROWTH = {
   key: 'growth',
   label: 'Growth',
   min: 0,
@@ -55,17 +55,20 @@ const GROWTH = {
  * Water veins belong to the world, not to the colony: their two controls sit
  * with the world record. They shape the ground every tab shows.
  */
-const STREAM_CONTROLS = [
+export const STREAM_CONTROLS = [
   { key: 'streams', label: 'Streams', min: 0, max: 3, step: 1, integer: true, hint: 'How many streams rise on the high, thick ground and run down to the basins' },
   { key: 'streamFlow', label: 'Flow', min: 0, max: 1, step: 0.01, hint: 'From a thread of water to a small brook: the channel’s width and depth' },
 ]
 
 /** The air: four controls, all uniforms — nothing is recomputed. */
-const AIR_CONTROLS = [
-  { key: 'airDensity', label: 'Density', min: 0, max: 1, step: 0.01, hint: 'How many residents the air holds' },
-  { key: 'airDrift', label: 'Drift', min: 0, max: 1, step: 0.01, hint: 'The slow current across the scene, and the air sliding downhill' },
+export const AIR_CONTROLS = [
+  { key: 'airDensity', label: 'Density', min: 0, max: 1, step: 0.01, hint: 'How much fine matter hangs in the air' },
+  { key: 'airDrift', label: 'Drift', min: 0, max: 1, step: 0.01, hint: 'The slow current across the scene' },
   { key: 'airCurl', label: 'Curl', min: 0, max: 1, step: 0.01, hint: 'How much the air turns and folds as it drifts' },
-  { key: 'airColony', label: 'Colony hold', min: 0, max: 1, step: 0.01, hint: 'How strongly colonies slow the air, draw it in and circulate it' },
+  { key: 'airWisps', label: 'Wisps', min: 0, max: 1, step: 0.01, hint: 'How many regions of the air show their motion' },
+  { key: 'airWispStrength', label: 'Wisp strength', min: 0, max: 1, step: 0.01, hint: 'How visible the moving residue is' },
+  { key: 'airHaze', label: 'Haze', min: 0, max: 1, step: 0.01, hint: 'Soft mist lying low over the water and basins' },
+  { key: 'airColony', label: 'Colony air', min: 0, max: 1, step: 0.01, hint: 'How much the colonies change the air around them: bending, slowing and lifting it, hosting a few residents' },
 ]
 
 function placed(id, stats) {
@@ -189,10 +192,13 @@ export default function ScatterPanel({ params, onChange, world, scatter, streams
       <section className="panel-section">
         <h2 className="section-title">Air</h2>
         <p className="panel-note">
-          Residents of the air: fine dust, wisps where the air runs, motes
-          that linger around the colonies, a few turning flakes, and haze
-          pooled over the basins. One field moves them all, with quiet
-          pockets, downhill streams and a slow circulation at each colony.
+          Fine suspended matter, most of it barely visible, lying in loose
+          bands over the low ground and water and drifting slowly on one
+          current that turns and folds. In a few loose regions the air
+          briefly shows its motion: fine residue carried by it, folding and
+          fraying, picking up colour here and there. Soft mist lies low over the
+          water and basins. Around the colonies the air bends, slows and lifts,
+          and a few residents linger.
         </p>
         <div className="slider-list">
           {AIR_CONTROLS.map((definition) => (

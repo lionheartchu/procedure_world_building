@@ -221,6 +221,18 @@ not about that relationship.
    *Future:* move the surface along the local spline tangent (a flow
    direction per point, as in flow-map water), or replace the regular bands
    with much subtler, irregular variation.
+   *Update (2026-10-14, study 09's water pass):* most of the banding came
+   from time, not the coordinates:
+   - The ripples drifted at time × a per-vertex speed taken from the slope.
+   - Wherever the speed changes along the stream, neighbouring rows drifted
+     further apart every second.
+   - So the ripples sheared into bands that grew finer the longer the scene
+     ran.
+
+   That is fixed with two staggered drift cycles; see
+   [09](09-composition-and-light.md#water-pass-the-stream-artifact-and-underwater-visibility).
+   The ripples still follow the ribbon's across/along coordinates, not the
+   local flow direction.
 2. **Source placement.** Sources satisfy the terrain rules computationally:
    high ground, far from the water, and a course that reaches the basin. But
    they often do not look like places where water would begin.

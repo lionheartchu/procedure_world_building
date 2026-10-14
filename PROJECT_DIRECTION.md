@@ -1,4 +1,8 @@
-# Residual Ecology(temp name) — Project Direction
+# Residual Ecology — Project Direction
+
+*The sections up to "Current Direction" are the original September framing,
+kept as written. The October sections at the end say how far the
+implementation has come, and how the visual direction has moved.*
 
 ## One-line concept
 
@@ -63,3 +67,76 @@ The central question is:
 > **How can a procedural world reveal its own history through the traces its systems leave behind?**
 
 The exact species, geography, and narrative will emerge through the remaining weekly experiments.
+
+## Ambition and current implementation — October 2026
+
+The ideas above are the project's ambition: a world whose traces keep
+changing the conditions for what comes next. The implementation realises
+part of it.
+
+**Implemented:**
+- **One chain of real dependencies.** The landform shapes the streams. The
+  streams are carved into it. A sediment record is laid down on that ground.
+  Colonies form where the record allows. Their matter shapes light, a
+  tissue network and the local air.
+- **Accumulation, as visible residue.** Sediment, colony size, residue and
+  light all show it.
+
+**Not yet:**
+- **The world does not continuously write back into its history.** The
+  record is computed in advance from the parameters, and the colonies are
+  placed on it once. Neither develops while the world is watched; only the
+  air moves continuously.
+- **Life does not add to the record,** so one generation does not shape the
+  next.
+- **Return and fragmentation are motifs, not processes.** They appear as a
+  tide, as residue and floating fragments, and as the volume study's
+  ruptures.
+- **Migration and agents** are not implemented. They remain directions.
+
+The detail is in the
+[project status report](docs/project-status-2026-10.md#what-evolves-over-time-and-what-is-computed).
+
+## Visual direction — October 2026
+
+*Added after the October reviews. The sections above are the September
+framing and are kept as written; where they differ, this note is the more
+recent, but the direction is still exploratory.*
+
+**Confirmed:**
+- **Dreamy, hazy, softly luminous,** with breathing room.
+- **Violet, lavender, lilac and pearl,** with subtle iridescence.
+- **Translucent, ambiguous, half-formed materials.**
+- **One interconnected landscape,** not an assembly of separate objects.
+- **Residual matter** that accumulates, changes and becomes part of a
+  larger ecology.
+- **Muddiness is not fixed by going darker or bluer.** A pass toward
+  ultramarine and icy blue was rejected.
+
+**References, each for one thing** (files in
+[`docs/references/`](docs/references/)):
+- **Sabrina Ratté's *Plane of Incidence*:** materiality and continuity.
+- ***The Ephemeral Lake*:** time, impermanence, a form and its environment.
+- ***Journey* and *ABZÛ*:** atmosphere. From *Journey*, the luminous water
+  and air (soft light, delicate reflective patterns, openness, immersion),
+  but not its cyan-blue palette.
+- ***Annihilation*:** a conceptual inspiration only. No image is kept in the
+  reference folder, by intent.
+
+None of them is a specification.
+
+**Historical, no longer binding:**
+- **The mood:** "deep shadows" and "slightly creepy" above.
+
+**Mint** remains a rare, optional accent for something active, never a
+general colour.
+
+**The world's edge.** Move away from a square slab toward an organically
+gathered landform whose edges pass into the surrounding atmosphere. This is
+a direction, not a design; no geometry is prescribed.
+
+The working principles are in
+[`AESTHETIC_LANGUAGE.md`](AESTHETIC_LANGUAGE.md).
+
+The current state of the project, and what is still open, is in
+[`docs/project-status-2026-10.md`](docs/project-status-2026-10.md).

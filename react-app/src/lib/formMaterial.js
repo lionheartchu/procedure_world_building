@@ -10,6 +10,71 @@ import { PALETTE } from './palette'
 const hexUniform = (hex) => ({ value: new THREE.Color(hex) })
 
 /**
+ * The accumulation light (accumulation.js), shared by the ground, the colony
+ * tissue and the forms, so all of them read one light held in the matter the
+ * colonies laid down. R light, G density, B tone (pearl, icy lavender,
+ * silver-blue); uAccumOn is 0 outside the Scatter view and rises with growth.
+ */
+export const ACCUMULATION_GLSL = /* glsl */ `
+  uniform sampler2D uAccum;
+  uniform float uAccumOn;
+  uniform float uAccumSize;
+  uniform vec3 uAccPearl;
+  uniform vec3 uAccIcy;
+  uniform vec3 uAccSilver;
+
+  vec4 accumAt(vec2 xz) {
+    if (uAccumOn <= 0.0) return vec4(0.0, 0.0, 0.5, 0.0);
+    vec4 a = texture2D(uAccum, clamp(xz / uAccumSize + 0.5, 0.0, 1.0));
+    return vec4(a.rg * uAccumOn, a.ba);
+  }
+
+  vec3 accumTone(float t) {
+    return t < 0.5 ? mix(uAccPearl, uAccIcy, t * 2.0) : mix(uAccIcy, uAccSilver, t * 2.0 - 1.0);
+  }
+`
+
+const BLANK_ACCUMULATION = new THREE.DataTexture(new Uint8Array([0, 0, 128, 255]), 1, 1)
+BLANK_ACCUMULATION.needsUpdate = true
+
+/** Uniforms for ACCUMULATION_GLSL; `size` is the world's width. */
+export function accumulationUniforms(size = 26) {
+  return {
+    uAccum: { value: BLANK_ACCUMULATION },
+    uAccumOn: { value: 0 },
+    uAccumSize: { value: size },
+    uAccPearl: hexUniform('#EEE7F4'),
+    uAccIcy: hexUniform('#C9C3F0'),
+    uAccSilver: hexUniform('#AEBFEC'),
+  }
+}
+
+/**
+ * The accumulation grid as a texture, with the value the materials read for
+ * how far it has come up (driven by the growth clock in ScatterLayers).
+ */
+export function createAccumulationTexture(acc) {
+  const texture = new THREE.DataTexture(acc.data, acc.res, acc.res)
+  texture.magFilter = THREE.LinearFilter
+  texture.minFilter = THREE.LinearFilter
+  texture.wrapS = THREE.ClampToEdgeWrapping
+  texture.wrapT = THREE.ClampToEdgeWrapping
+  texture.needsUpdate = true
+  return { texture, size: acc.size, rise: { value: 1 }, stats: acc.stats }
+}
+
+/**
+ * Point every accumulation uniform of a material at the current light (or
+ * at nothing).
+ */
+export function setAccumulation(uniforms, accumulation) {
+  if (!uniforms.uAccum) return
+  uniforms.uAccum.value = accumulation?.texture ?? BLANK_ACCUMULATION
+  uniforms.uAccumOn.value = accumulation ? accumulation.rise.value : 0
+  if (accumulation) uniforms.uAccumSize.value = accumulation.size
+}
+
+/**
  * Shared vertex stage. A part scales about its anchor as the growth clock
  * passes its birth window, then drifts very slowly — one phase per form, taken
  * from its anchor, so a form sways as a whole instead of shimmering.
@@ -30,6 +95,7 @@ const VERTEX = /* glsl */ `
   varying vec4 vLook;
   varying float vEdge;
   varying float vPhase;
+  varying float vAbove;
 
   #include <common>
   #include <fog_pars_vertex>
@@ -37,6 +103,8 @@ const VERTEX = /* glsl */ `
   void main() {
     float g = smoothstep(aBirth.x, aBirth.x + max(aBirth.y, 1e-3), uGrowth);
     vec3 p = aAnchor + (position - aAnchor) * g;
+    // Height above the part's foot: how far light from the ground reaches.
+    vAbove = p.y - aAnchor.y;
 
     vPhase = aAnchor.x * 0.23 + aAnchor.z * 0.17;
     p += vec3(0.6, 0.1, 0.45) * sin(uTime * 0.19 + vPhase) * aSway * 0.045;
@@ -106,6 +174,9 @@ const SHARED_UNIFORMS = /* glsl */ `
   varying vec4 vLook;
   varying float vEdge;
   varying float vPhase;
+  varying float vAbove;
+
+  ${ACCUMULATION_GLSL}
 `
 
 /**
@@ -169,6 +240,11 @@ const SOLID_FRAGMENT = /* glsl */ `
     emit += uBright * pow(max(dot(n, normalize(uLightDir + v)), 0.0), 60.0) * uFibre * 0.9;
 
     emit *= uGain;
+
+    // Light held in the matter at the foot rises a little way into whatever
+    // stands in it, most where it is thin.
+    vec4 acc = accumAt(vWorld.xz);
+    emit += accumTone(acc.b) * acc.r * exp(-max(vAbove, 0.0) / 0.5) * (0.05 + 0.22 * thin) * glassy;
 
     // Mint only where the site is live — the scarcity rule, carried by data.
     float breath = 0.7 + 0.3 * sin(uTime * 0.45 + vPhase * 6.0);
@@ -268,16 +344,46 @@ const FILM_FRAGMENT = /* glsl */ `
     // Lips and glints only where the film is present at all, so a skirt
     // fading into the ground does not leave its rim drawn in highlights.
     float presence = smoothstep(0.0, 0.08, vLook.z);
+
+    // Light from the accumulated matter at the sheet's foot rises into it:
+    // strongest at the base and where the sheet is seen thin, fading with
+    // height. Folds (where the surface turns sharply: curvature from the
+    // normal's change per unit of surface) hold more of it, as a doubled
+    // sheet does.
+    vec4 acc = accumAt(vWorld.xz);
+    vec3 tone = accumTone(acc.b);
+    float rise = acc.r * exp(-max(vAbove, 0.0) / 0.6);
+    float curve = length(fwidth(n)) / max(length(fwidth(vWorld)), 1e-4);
+    float fold = smoothstep(2.5, 8.0, curve) * presence;
+    vec3 held = tone * (rise * (0.03 + 0.13 * fres) + fold * (0.02 + 0.08 * acc.r));
     float alpha = vLook.z * (0.45 + 0.75 * fres) + (lip * 0.2 + spec * uSpecular * 0.5) * presence + edge * uEdgeGlow * 1.3 + flow * 0.35;
 
     float under = smoothstep(0.0, 0.25, uWaterY - vWorld.y);
     lit *= 1.0 - under * 0.45;
     emit *= 1.0 - under * 0.6;
 
-    gl_FragColor = vec4(lit + emit, clamp(alpha, 0.0, 0.92));
+    // Part of the sheet's light passes through stacked films instead of
+    // being blended over what lies behind, so where membranes overlap the
+    // light in them builds up, as in layered tissue. (Premultiplied: the
+    // material blends ONE, ONE_MINUS_SRC_ALPHA.)
+    vec3 layered = emit * 0.2 + held;
+    gl_FragColor = vec4(lit + emit * 0.8, clamp(alpha, 0.0, 0.92));
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
     #include <fog_fragment>
+    vec3 add = layered * smoothstep(0.0, 0.15, alpha);
+    #ifdef TONE_MAPPING
+      add = toneMapping(add);
+    #endif
+    add = linearToOutputTexel(vec4(add, 1.0)).rgb;
+    #ifdef USE_FOG
+      #ifdef FOG_EXP2
+        add *= exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
+      #else
+        add *= 1.0 - smoothstep(fogNear, fogFar, vFogDepth);
+      #endif
+    #endif
+    gl_FragColor.rgb = gl_FragColor.rgb * gl_FragColor.a + add;
   }
 `
 
@@ -295,7 +401,8 @@ const FILM_FRAGMENT = /* glsl */ `
  *   tension   solid with fibres and a crisp highlight (strands, ribs)
  *   sediment  solid, matte and granular (plates, grains)
  *   tissue    the colony's ground skin
- *   halo      the colony's light on the terrain
+ *   halo      additive light on the terrain (now only the debug splines:
+ *             the colony's light comes from accumulation.js instead)
  */
 export function createFormMaterial({ kind, tint = PALETTE.paleLavender, gain = 1, edgeGlow = 0.12, specular, body = 1, flow = 0 }) {
   if (kind === 'halo') return createHaloMaterial(tint)
@@ -304,6 +411,7 @@ export function createFormMaterial({ kind, tint = PALETTE.paleLavender, gain = 1
   return new THREE.ShaderMaterial({
     fog: true,
     transparent: film,
+    premultipliedAlpha: film,
     depthWrite: kind !== 'film',
     side: THREE.DoubleSide,
     uniforms: THREE.UniformsUtils.merge([
@@ -334,6 +442,7 @@ export function createFormMaterial({ kind, tint = PALETTE.paleLavender, gain = 1
         uBright: hexUniform('#E2DEF6'),
         uRim: hexUniform('#A9B0E8'),
         uMint: hexUniform(PALETTE.moonlitMint),
+        ...accumulationUniforms(),
       },
     ]),
     vertexShader: VERTEX,
@@ -497,6 +606,8 @@ const TISSUE_FRAGMENT = /* glsl */ `
   #include <common>
   #include <fog_pars_fragment>
 
+  ${ACCUMULATION_GLSL}
+
   float hash21(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
     p += dot(p, p + 45.32);
@@ -536,10 +647,19 @@ const TISSUE_FRAGMENT = /* glsl */ `
     col = mix(col, uSediment * (0.55 + 0.7 * grain) + uBright * specks * 0.25, crusted);
     vec3 lit = col * (ambient * 0.9 + uLightColor * wrap * 0.75);
 
+    // The light held in what the colony gathered (accumulation.js): the
+    // skin takes its tone, and the thicker and denser it is, the more light
+    // it holds — mounds and crust over a dense core glow, a thin skin far out
+    // barely does.
+    vec4 acc = accumAt(vWorld.xz);
+    vec3 tone = accumTone(acc.b);
+    col = mix(col, tone, 0.3 * acc.r);
+
     // Veins carry a slow light between the colony's parts.
     float pulse = 0.72 + 0.28 * sin(uTime * 0.4 + vUv.x * 0.7 + vUv.y * 0.55);
-    vec3 emit = uBright * vein * 0.55 * pulse;
+    vec3 emit = uBright * vein * 0.55 * pulse * (0.7 + 0.5 * acc.r);
     emit += uTint * thick * 0.07;
+    emit += tone * acc.r * (0.03 + 0.1 * acc.g + 0.08 * thick + 0.06 * crusted) * (0.85 + 0.3 * mottle);
     // The growing front glows as the tissue spreads, then settles.
     float front = smoothstep(0.0, 0.35, vGrow) * (1.0 - smoothstep(0.35, 1.0, vGrow));
     emit += uBright * front * 0.4 * presence;
@@ -581,9 +701,349 @@ function createTissueMaterial(tint) {
         uBright: hexUniform('#E2DEF6'),
         uTint: hexUniform(tint),
         uSediment: hexUniform('#CEC8E6'),
+        ...accumulationUniforms(),
       },
     ]),
     vertexShader: TISSUE_VERTEX,
     fragmentShader: TISSUE_FRAGMENT,
+  })
+}
+
+/**
+ * The branching network (branching.js), in two materials.
+ *
+ * The tissue on the ground is a draped surface showing the network's tissue
+ * map (R coverage, G core, B fineness, A surfaced). It is shaded as part of
+ * the ground, not as light over it: lit by the scene's own light, raised a
+ * little (the coverage bumps the normal), translucent, paler at the cores
+ * and on the finest growth. Where a branch runs beneath the surface it is
+ * diffuse and faint (a blurred read of the map); where it has come through,
+ * defined. Blended, never added; a very little local light at the cores.
+ * It spreads out from the anchor with the growth clock.
+ *
+ * The veins in the membranes are faint translucent ribbons in the sheet,
+ * rounded across, thinning to nothing at their tips.
+ */
+const SCENE_LIGHT = {
+  uLightDir: { value: new THREE.Vector3(-0.6, 0.42, -0.55).normalize() },
+  uLightColor: hexUniform('#8E88C0'),
+  uSkyAmbient: hexUniform('#4C4A7E'),
+  uGroundAmbient: hexUniform('#22243F'),
+}
+
+const TISSUE_MAP_VERTEX = /* glsl */ `
+  attribute vec2 aBirth;
+
+  uniform float uGrowth;
+
+  varying vec2 vUv;
+  varying vec3 vWorld;
+  varying vec3 vNormal;
+  varying float vGrow;
+
+  #include <common>
+  #include <fog_pars_vertex>
+
+  void main() {
+    vGrow = smoothstep(aBirth.x, aBirth.x + aBirth.y, uGrowth);
+    vUv = uv;
+    vNormal = normalize(mat3(modelMatrix) * normal);
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vWorld = world.xyz;
+    vec4 mvPosition = viewMatrix * world;
+    gl_Position = projectionMatrix * mvPosition;
+    #include <fog_vertex>
+  }
+`
+
+const TISSUE_MAP_FRAGMENT = /* glsl */ `
+  uniform sampler2D uMap;
+  uniform vec3 uLightDir;
+  uniform vec3 uLightColor;
+  uniform vec3 uSkyAmbient;
+  uniform vec3 uGroundAmbient;
+  uniform vec3 uTissue;
+  uniform vec3 uPearl;
+  uniform vec3 uSilver;
+  uniform float uWaterY;
+  uniform float uBump;
+  uniform float uOpacity;
+  uniform float uMapSize;
+
+  varying vec2 vUv;
+  varying vec3 vWorld;
+  varying vec3 vNormal;
+  varying float vGrow;
+
+  #include <common>
+  #include <fog_pars_fragment>
+
+  void main() {
+    vec4 t = texture2D(uMap, vUv);
+    // Beneath the surface the tissue spreads and blurs: a coarser read.
+    vec4 under = texture2D(uMap, vUv, 2.5);
+    float surfaced = smoothstep(0.3, 0.75, t.a);
+    // A branch is present at full strength well before full coverage: the
+    // map gives thin branches only a share of a texel.
+    // Further away the mipmapped map averages fine branches into their
+    // surroundings; hold them up by how many texels fall in a pixel, so the
+    // growth stays a lacy texture instead of vanishing.
+    float texPerPx = length(fwidth(vUv)) * uMapSize;
+    float hold = clamp(texPerPx, 1.0, 5.0);
+    float sharp = smoothstep(0.0, 0.45 / hold, t.r);
+    float soft = smoothstep(0.0, 0.3, under.r);
+    // Beneath the surface a branch is still there, softer and fainter, so
+    // it does not break into dashes.
+    float body = mix(max(soft * 0.7, sharp * 0.45), sharp, surfaced);
+    // Where growth is dense the tissue between the branches thickens too:
+    // a faint pale spread under the mat.
+    float presence = max(body, soft * 0.42) * vGrow;
+    if (presence < 0.004) discard;
+
+    // Raised a little: the coverage, slightly softened, as a height.
+    float h = texture2D(uMap, vUv, 0.7).r * uBump;
+    vec3 sx = dFdx(vWorld);
+    vec3 sy = dFdy(vWorld);
+    vec3 n0 = normalize(vNormal);
+    vec3 r1 = cross(sy, n0);
+    vec3 r2 = cross(n0, sx);
+    float det = dot(sx, r1);
+    vec3 grad = sign(det) * (dFdx(h) * r1 + dFdy(h) * r2);
+    vec3 n = normalize(abs(det) * n0 - grad);
+
+    vec3 v = normalize(cameraPosition - vWorld);
+    float wrap = dot(n, uLightDir) * 0.5 + 0.5;
+    vec3 ambient = mix(uGroundAmbient, uSkyAmbient, n.y * 0.5 + 0.5);
+    float spec = pow(max(dot(n, normalize(uLightDir + v)), 0.0), 24.0);
+
+    // Pale tissue, paler at the cores and on the finest growth; what lies
+    // beneath is cooler.
+    vec3 colour = mix(uTissue, uPearl, clamp(t.g * 0.7 + t.b * 0.35, 0.0, 1.0));
+    colour = mix(uSilver, colour, 0.35 + 0.65 * surfaced);
+    // Lit as part of the ground, and paler than it: a little light held in
+    // the tissue itself (more at the cores, where it is densest), so it
+    // reads as pale matter in the surface, as in the reference, rather than
+    // as a stain of the ground's own colour.
+    vec3 col = colour * (ambient * 1.25 + uLightColor * wrap * 1.1)
+             + colour * (0.22 + 0.25 * t.g) * (0.5 + 0.5 * surfaced)
+             + uPearl * 0.12 * spec * body;
+
+    float alpha = presence * mix(0.45, 0.95, surfaced) * uOpacity;
+    float underWater = smoothstep(-0.02, 0.2, uWaterY - vWorld.y);
+    alpha *= 1.0 - 0.6 * underWater;
+
+    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.85));
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+    #include <fog_fragment>
+  }
+`
+
+export function createTissueMapMaterial(map) {
+  const material = new THREE.ShaderMaterial({
+    fog: true,
+    transparent: true,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+    uniforms: THREE.UniformsUtils.merge([
+      THREE.UniformsLib.fog,
+      {
+        uMap: { value: null },
+        uGrowth: { value: 1 },
+        uWaterY: { value: 0 },
+        uBump: { value: 0.006 },
+        uOpacity: { value: 1 },
+        uMapSize: { value: 2048 },
+        uTissue: hexUniform('#CFC6EC'),
+        uPearl: hexUniform('#F2ECF4'),
+        uSilver: hexUniform('#AFBDEB'),
+        ...SCENE_LIGHT,
+      },
+    ]),
+    vertexShader: TISSUE_MAP_VERTEX,
+    fragmentShader: TISSUE_MAP_FRAGMENT,
+  })
+  // Set after the merge, which would otherwise copy the texture.
+  material.uniforms.uMap.value = map
+  return material
+}
+
+const VEIN_VERTEX = /* glsl */ `
+  attribute vec2 aBirth;
+  attribute vec4 aLook;
+
+  uniform float uGrowth;
+
+  varying vec2 vUv;
+  varying vec4 vLook;
+  varying float vGrow;
+  varying vec3 vWorld;
+
+  #include <common>
+  #include <fog_pars_vertex>
+
+  void main() {
+    vGrow = smoothstep(aBirth.x, aBirth.x + aBirth.y, uGrowth);
+    vLook = aLook;
+    vUv = uv;
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vWorld = world.xyz;
+    vec4 mvPosition = viewMatrix * world;
+    gl_Position = projectionMatrix * mvPosition;
+    #include <fog_vertex>
+  }
+`
+
+const VEIN_FRAGMENT = /* glsl */ `
+  uniform vec3 uTissue;
+  uniform vec3 uPearl;
+  uniform vec3 uSilver;
+
+  varying vec2 vUv;
+  varying vec4 vLook;
+  varying float vGrow;
+  varying vec3 vWorld;
+
+  #include <common>
+  #include <fog_pars_fragment>
+
+  void main() {
+    float across = clamp(abs(vUv.x), 0.0, 1.0);
+    float body = pow(1.0 - across * across, 2.0);
+    // Stretches of the vein sink into the sheet.
+    float surfaced = 0.35 + 0.65 * smoothstep(0.25, 0.75, fract(sin(floor(vUv.y * 6.0 + vLook.y * 17.0) * 43.1) * 917.3) * 0.5 + 0.5 * sin(vUv.y * 5.0 + vLook.y * 9.0));
+    vec3 col = mix(uSilver, mix(uTissue, uPearl, 0.5), surfaced) * 0.85;
+    float alpha = body * vLook.x * surfaced * vGrow * 0.6;
+    if (alpha < 0.004) discard;
+    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.5));
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+    #include <fog_fragment>
+  }
+`
+
+export function createVeinMaterial() {
+  return new THREE.ShaderMaterial({
+    fog: true,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    uniforms: THREE.UniformsUtils.merge([
+      THREE.UniformsLib.fog,
+      {
+        uGrowth: { value: 1 },
+        uTissue: hexUniform('#CFC6EC'),
+        uPearl: hexUniform('#F2ECF4'),
+        uSilver: hexUniform('#AFBDEB'),
+      },
+    ]),
+    vertexShader: VEIN_VERTEX,
+    fragmentShader: VEIN_FRAGMENT,
+  })
+}
+
+/**
+ * The transition strands (branching.js): fibres of the membranes' own
+ * substance drawn out thin. Translucent like the film, thicker-looking where
+ * the surface turns away (so a fibre reads as a fine hollow filament, not a
+ * line), faintly striated along its length, lit by the scene's light.
+ * Pale lilac to silver-blue; no glow. Blended, never added.
+ */
+const TENDRIL_VERTEX = /* glsl */ `
+  attribute vec2 aBirth;
+  attribute vec4 aLook;
+
+  uniform float uGrowth;
+
+  varying vec2 vUv;
+  varying vec4 vLook;
+  varying float vGrow;
+  varying vec3 vWorld;
+  varying vec3 vNormal;
+
+  #include <common>
+  #include <fog_pars_vertex>
+
+  void main() {
+    vGrow = smoothstep(aBirth.x, aBirth.x + aBirth.y, uGrowth);
+    vLook = aLook;
+    vUv = uv;
+    vNormal = normalize(mat3(modelMatrix) * normal);
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vWorld = world.xyz;
+    vec4 mvPosition = viewMatrix * world;
+    gl_Position = projectionMatrix * mvPosition;
+    #include <fog_vertex>
+  }
+`
+
+const TENDRIL_FRAGMENT = /* glsl */ `
+  uniform vec3 uLightDir;
+  uniform vec3 uLightColor;
+  uniform vec3 uSkyAmbient;
+  uniform vec3 uGroundAmbient;
+  uniform vec3 uTissue;
+  uniform vec3 uPearl;
+  uniform vec3 uSilver;
+  uniform float uWaterY;
+
+  varying vec2 vUv;
+  varying vec4 vLook;
+  varying float vGrow;
+  varying vec3 vWorld;
+  varying vec3 vNormal;
+
+  #include <common>
+  #include <fog_pars_fragment>
+
+  void main() {
+    vec3 n = normalize(vNormal);
+    if (!gl_FrontFacing) n = -n;
+    vec3 v = normalize(cameraPosition - vWorld);
+    float facing = abs(dot(n, v));
+    float fres = pow(1.0 - facing, 1.5);
+    float wrap = dot(n, uLightDir) * 0.5 + 0.5;
+    vec3 ambient = mix(uGroundAmbient, uSkyAmbient, n.y * 0.5 + 0.5);
+    float spec = pow(max(dot(n, normalize(uLightDir + v)), 0.0), 30.0);
+    // Faint fibres along the strand.
+    float fibre = 0.85 + 0.15 * sin(vUv.y * 6.2832 * 3.0 + vLook.y * 5.0 + sin(vUv.x * 9.0) * 1.5);
+    vec3 colour = mix(uTissue, uSilver, 0.35 + 0.4 * fres);
+    // Some light held in it, as in the membranes, so it does not go dark
+    // against the ground.
+    vec3 col = colour * (ambient * 0.9 + uLightColor * wrap * 0.7) * fibre + colour * 0.16;
+    // Brighter toward its outline, as a membrane is: a strand is all edge.
+    col += uPearl * ((0.07 + 0.2 * fres) * fibre + 0.18 * spec);
+    float alpha = (0.45 + 0.4 * fres) * vLook.z * vGrow * fibre;
+    float under = smoothstep(-0.02, 0.2, uWaterY - vWorld.y);
+    alpha *= 1.0 - 0.6 * under;
+    if (alpha < 0.004) discard;
+    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.85));
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+    #include <fog_fragment>
+  }
+`
+
+export function createTendrilMaterial() {
+  return new THREE.ShaderMaterial({
+    fog: true,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    uniforms: THREE.UniformsUtils.merge([
+      THREE.UniformsLib.fog,
+      {
+        uGrowth: { value: 1 },
+        uWaterY: { value: 0 },
+        uTissue: hexUniform('#CFC6EC'),
+        uPearl: hexUniform('#F2ECF4'),
+        uSilver: hexUniform('#AFBDEB'),
+        ...SCENE_LIGHT,
+      },
+    ]),
+    vertexShader: TENDRIL_VERTEX,
+    fragmentShader: TENDRIL_FRAGMENT,
   })
 }

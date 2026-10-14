@@ -83,11 +83,32 @@
   outline-offset: 4px;
 }
 
+/* Explore, then the studies behind a quiet secondary menu. */
+.view-tabs {
+  flex-wrap: wrap;
+  row-gap: 0.7rem;
+}
+
+.view-tab-menu.is-open {
+  color: rgba(185, 178, 218, 0.8);
+}
+
+.study-tabs {
+  display: flex;
+  flex-basis: 100%;
+  gap: 0.9rem;
+}
+
+.study-tab {
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+}
+
 /* --- library -------------------------------------------------------------- */
 
 .library {
   position: absolute;
-  top: clamp(6.5rem, 12vh, 8rem);
+  top: clamp(7.6rem, 13.5vh, 9rem);
   left: clamp(1.25rem, 3vw, 2rem);
   z-index: 2;
   display: flex;
@@ -727,4 +748,113 @@
 
 .stream-note {
   margin-top: 1.1rem;
+}
+
+/* --- explore --------------------------------------------------------------- */
+
+/* Explore's panel fits what it shows (capped at the screen), rather than
+   standing the full height as the studies' panels do. */
+.explore-panel {
+  bottom: auto;
+  max-height: calc(100svh - 2 * clamp(1rem, 2.5vw, 1.75rem));
+}
+
+/* A quiet collapsible group: closed by default, one line until opened. */
+.explore-more {
+  margin-top: 0.85rem;
+}
+
+.explore-more > summary {
+  list-style: none;
+  cursor: pointer;
+  font-family: var(--body);
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(141, 134, 184, 0.42);
+  transition: color 400ms ease;
+}
+
+.explore-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.explore-more > summary::before {
+  content: '+';
+  display: inline-block;
+  width: 0.9rem;
+  color: rgba(141, 134, 184, 0.38);
+}
+
+.explore-more[open] > summary::before {
+  content: '\2212';
+}
+
+.explore-more > summary:hover,
+.explore-more[open] > summary {
+  color: rgba(185, 178, 218, 0.78);
+}
+
+.explore-more > summary:focus-visible {
+  outline: 1px solid rgba(141, 134, 184, 0.5);
+  outline-offset: 3px;
+}
+
+.explore-more > .slider-list,
+.explore-more > .select-slot,
+.explore-more > .map-stack {
+  margin-top: 0.8rem;
+}
+
+.explore-more > .panel-note:first-of-type {
+  margin-top: 0.7rem;
+}
+
+/* What a section's controls do to the world: one word beside its title
+   (the tooltip says the rest). */
+.explore-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  cursor: default;
+}
+
+.explore-tag {
+  font-size: 0.56rem;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: none;
+  color: rgba(141, 134, 184, 0.6);
+}
+
+.explore-more > summary .explore-tag {
+  float: right;
+}
+
+/* Explore is read at a distance: its labels sit a little brighter than the
+   studies' quiet ones. */
+.explore-panel .section-title {
+  color: rgba(165, 158, 206, 0.82);
+}
+
+.explore-panel .slider-label {
+  color: rgba(198, 191, 228, 0.86);
+}
+
+.explore-panel .explore-more > summary {
+  color: rgba(165, 158, 206, 0.66);
+}
+
+.explore-panel .explore-more > summary::before {
+  color: rgba(165, 158, 206, 0.58);
+}
+
+.explore-panel .explore-more > summary:hover,
+.explore-panel .explore-more[open] > summary {
+  color: rgba(198, 191, 228, 0.9);
+}
+
+.explore-panel .panel-hint {
+  color: rgba(165, 158, 206, 0.58);
 }

@@ -2,48 +2,48 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { GPUComputationRenderer } from 'three/examples/jsm/misc/GPUComputationRenderer.js'
-import { AIR, AIR_GLSL, KIND, hoverHeight, kindOf, makeFloor } from '../lib/air'
+import { AIR, AIR_GLSL, airDensity, airVelocity, colonyAirData, hoverHeight, makeFloor } from '../lib/air'
+import { colonyAirUniforms, setColonyAir } from '../lib/airColony'
 import { mulberry32 } from '../lib/noise'
+import AirWisps from './AirWisps'
+import AirHaze from './AirHaze'
+import AirFragments from './AirFragments'
 
-/** Particles simulated on the GPU: SIDE² (Density draws a share of them). */
+/*
+ * The scene's air — rework, phases 1–5: the base atmosphere (dust), residue
+ * carried by moving air (AirWisps), the colonies' local air (the field bends,
+ * slows and lifts around their forms, lib/air.js; a few residents linger
+ * there; matter near them takes a passing tint), the basin haze (AirHaze),
+ * and rare fragments of membrane suspended in the air (AirFragments).
+ */
+
+/** Internal check: ?debug=colonyair shows only the air the colonies touch. */
+const DEBUG = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === 'colonyair'
+
+/** Kinds of dust by each grain's own random (traits.b): soft, speck, resident, grain. */
+const KIND = { soft: 0.02, speck: 0.15, resident: 0.172 }
+
+/** Grains simulated on the GPU: SIDE² (Density draws a share of them). */
 const SIDE = 128
 const COUNT = SIDE * SIDE
 
-/** The scene's fog density (Scene.jsx), so far particles fade with it. */
+/** The scene's fog density (Scene.jsx), so far grains fade with it. */
 const FOG = 0.026
 
-/** Each resident's lifespan, seconds: [shortest, range]. */
-const LIFE = {
-  [KIND.HAZE]: [60, 60],
-  [KIND.FLAKE]: [80, 80],
-  [KIND.MOTE]: [90, 110],
-  [KIND.WISP]: [10, 15],
-  [KIND.DUST]: [60, 90],
-}
+/** Each grain's lifespan, seconds: [shortest, range]. */
+const LIFE = [40, 70]
 
-/** How far back along the flow a wisp reaches, in seconds of travel, and in how many steps. */
-const WISP_REACH = 4
-const WISP_STEPS = 4
-
-/** GLSL constants for the residents. */
-const KINDS_GLSL = Object.entries(KIND)
-  .map(([name, i]) => `#define ${name} ${i}`)
-  .join('\n')
+/** Tries at finding a birthplace the density map accepts. */
+const TRIES = 8
 
 /* --- the simulation (GPU) -------------------------------------------- */
 
 /**
- * One step of the field for every particle. Position in xyz, life in w.
- * When a life ends the particle is reborn where its kind belongs:
- *
- *   haze   over the basins and low ground (the lowest of three tries)
- *   motes  around a colony, most of them
- *   wisps  where the air runs fastest (the fastest of four tries)
- *   dust   anywhere, leaning to the quieter of two places
- *   flakes anywhere
+ * One step of the field for every grain: position in xyz, life in w. When a
+ * life ends the grain is reborn where the density map accepts it, at its own
+ * height over the floor.
  */
 const SIMULATE = /* glsl */ `
-  ${KINDS_GLSL}
   uniform float uDelta;
   uniform sampler2D uTraits;
   ${AIR_GLSL}
@@ -54,55 +54,48 @@ const SIMULATE = /* glsl */ `
     return fract((p3.x + p3.y) * p3.z);
   }
 
-  vec2 airPick(vec2 uv, float e) {
-    return (vec2(hash12(uv * 113.1 + e), hash12(uv * 71.7 + e + 5.3)) - 0.5) * ${(2 * AIR.halfWidth).toFixed(1)};
-  }
-
-  vec3 airSpawn(int kind, vec2 uv, float e, float pref) {
-    vec2 xz = airPick(uv, e);
-    if (kind == HAZE) {
-      float best = -1e9;
-      for (int k = 0; k < 3; k++) {
-        vec2 c = airPick(uv, e + float(k) * 7.31);
-        float s = -airFloor(c) - 0.25 * max(0.0, max(abs(c.x), abs(c.y)) - 10.0);
-        if (s > best) { best = s; xz = c; }
-      }
-    } else if (kind == MOTE) {
-      if (uColonyCount > 0 && hash12(uv * 37.9 + e) < 0.85) {
-        int pick = int(floor(hash12(uv * 53.3 + e) * float(uColonyCount)));
-        vec4 c = uColonies[0];
-        for (int i = 0; i < ${AIR.maxColonies}; i++) if (i == pick) c = uColonies[i];
-        float a = hash12(uv * 19.1 + e) * 6.2832;
-        xz = c.xz + vec2(cos(a), sin(a)) * c.w * (0.4 + 0.9 * hash12(uv * 23.7 + e));
-      }
-    } else if (kind == WISP) {
-      float best = -1.0;
-      for (int k = 0; k < 4; k++) {
-        vec2 c = airPick(uv, e + float(k) * 3.17);
-        vec3 q = vec3(c.x, airFloor(c) + pref, c.y);
-        float s = length(airVelocity(q, pref, airFlow(WISP), airHoldGain(WISP)).xz);
-        if (s > best) { best = s; xz = c; }
-      }
-    } else if (kind == DUST) {
-      vec2 c = airPick(uv, e + 11.3);
-      if (airActivity(c, uTime) < airActivity(xz, uTime)) xz = c;
-    }
-    return vec3(xz.x, airFloor(xz) + pref, xz.y);
-  }
-
   void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
     vec4 s = texture2D(texturePosition, uv);
     vec4 traits = texture2D(uTraits, uv);
-    int kind = airKind(traits.b);
-    float pref = airHover(kind, traits.r);
+    bool resident = traits.b >= ${KIND.speck} && traits.b < ${KIND.resident};
+    float pref = resident ? 0.15 + 1.7 * pow(traits.r, 1.6) : airHover(traits.r);
     float life = s.w + uDelta / traits.g;
     vec3 p = s.xyz;
-    if (life >= 1.0) {
-      p = airSpawn(kind, uv, fract(uTime * 0.0173) * 91.0, pref);
+    // A resident that has drifted out of its colony (where it is no longer
+    // seen) ends its life soon and is born again among the forms, so most
+    // residents are lingering in a colony at any moment, without any pull
+    // gathering them.
+    if (resident) life += 4.0 * uDelta / traits.g * (1.0 - smoothstep(0.02, 0.2, colonyNear(p)));
+    if (life >= 1.0 && resident && uColonyCount > 0) {
+      // A resident is born in a colony, among its forms.
+      float e = fract(uTime * 0.0173) * 91.0;
+      int pick = int(floor(hash12(uv * 53.3 + e) * float(uColonyCount)));
+      vec4 c = uColonies[0];
+      for (int i = 0; i < ${6}; i++) if (i == pick) c = uColonies[i];
+      float a = hash12(uv * 19.1 + e) * 6.2832;
+      float r = c.w * (0.25 + 0.85 * sqrt(hash12(uv * 23.7 + e)));
+      vec2 xz = c.xz + vec2(cos(a), sin(a)) * r;
+      p = vec3(xz.x, airFloor(xz) + pref, xz.y);
+      life = 0.0;
+    } else if (life >= 1.0) {
+      float e = fract(uTime * 0.0173) * 91.0;
+      // Accept a try with the map's probability; if none is accepted, keep
+      // the densest try, never a random one.
+      vec2 xz = vec2(0.0);
+      float best = -1.0;
+      for (int k = 0; k < ${TRIES}; k++) {
+        float ek = e + float(k) * 7.31;
+        vec2 c = (vec2(hash12(uv * 113.1 + ek), hash12(uv * 71.7 + ek + 5.3)) - 0.5) * ${(2 * AIR.halfWidth).toFixed(1)};
+        // A little more matter is born around colonies.
+        float d = min(1.0, airDensity(c, uTime) + 0.6 * colonyNear(vec3(c.x, airFloor(c) + 0.5, c.y)));
+        if (d > best) { best = d; xz = c; }
+        if (hash12(uv * 37.9 + ek + 2.1) < d) { xz = c; break; }
+      }
+      p = vec3(xz.x, airFloor(xz) + pref, xz.y);
       life = 0.0;
     } else {
-      p += airVelocity(p, pref, airFlow(kind), airHoldGain(kind)).xyz * uDelta;
+      p += airVelocity(p, pref) * uDelta;
       float W = ${AIR.halfWidth.toFixed(1)};
       p.xz = mod(p.xz + W, 2.0 * W) - W;
       p.y = min(p.y, ${AIR.top.toFixed(1)});
@@ -114,130 +107,169 @@ const SIMULATE = /* glsl */ `
 /* --- the look ----------------------------------------------------------- */
 
 /**
- * Shared by every resident's drawing: the field (wisps need its velocity),
- * the palette, and the fades that set the depth hierarchy.
+ * Three sizes of the same matter, by each grain's own random (traits.b):
  *
- * Silver and pale lavender for ambient matter, icy blue for the flow, and a
- * restrained aqua only where a colony holds the air. Everything is additive,
- * so it brightens what is behind it, and fades with the scene's fog, at the
- * volume's sides (where particles wrap), at birth and death, and with height
- * over the ground, so the far sky stays nearly empty.
+ *   grain  most of it: tiny and mostly very faint; round or nearly so
+ *   speck  about one in eight: a little larger, often elongated or irregular
+ *          (a lobed outline), each turning slowly
+ *   soft   one in fifty: larger and very faint, as if out of focus; seen only
+ *          in the foreground, for depth
+ *
+ * Depth: grains fade out close to the camera and far from it, so the middle
+ * distance carries the field; specks reach a little nearer and further; soft
+ * ones exist only near the camera. Everything thins with height over the
+ * ground, so the sky stays nearly empty, and a grain with only sky behind it
+ * dims (it would read as a star); everything fades with the scene's fog. A
+ * point smaller than a pixel and a quarter fades away rather than being
+ * drawn larger, so distant matter becomes atmosphere, never snow.
+ *
+ * Colour: pale lavender, silver-blue, blue-white and, rarely, a restrained
+ * mint; cooler over the low ground and water, and drifting across the scene
+ * in broad, slow regions so the palette is never one flat purple.
+ *
+ * Additive with low alpha. Because the field never concentrates matter (see
+ * lib/air.js), no place can gather enough grains to glow.
  */
-const LOOK_GLSL = /* glsl */ `
-  ${KINDS_GLSL}
+const POINT_VERTEX = /* glsl */ `
   ${AIR_GLSL}
+  attribute vec2 aRef;
   uniform sampler2D uPositions;
   uniform sampler2D uTraits;
   uniform float uScale;
   uniform float uDpr;
-  uniform vec2 uViewport;
-
-  const vec3 SILVER = vec3(0.85, 0.86, 0.92);
-  const vec3 LAVENDER = vec3(0.80, 0.77, 0.95);
-  const vec3 ICE = vec3(0.70, 0.84, 1.0);
-  const vec3 AQUA = vec3(0.68, 0.93, 0.87);
-
-  float airFog(float dist) {
-    return exp(-${FOG} * ${FOG} * dist * dist);
-  }
-
-  float airEdge(vec3 p) {
-    vec2 a = abs(p.xz);
-    return 1.0 - smoothstep(${(AIR.halfWidth - 3).toFixed(1)}, ${AIR.halfWidth.toFixed(1)}, max(a.x, a.y));
-  }
-
-  float airBorn(float life, float rise, float fall) {
-    return smoothstep(0.0, rise, life) * (1.0 - smoothstep(1.0 - fall, 1.0, life));
-  }
-
-  // Thins away between these heights over the ground.
-  float airSky(vec3 p, float from, float to) {
-    return 1.0 - smoothstep(from, to, p.y - airFloor(p.xz));
-  }
-
-  // How firmly a colony holds this point (as in the field), for colour.
-  float airHeld(vec3 p, float gain) {
-    float held = 0.0;
-    for (int i = 0; i < ${AIR.maxColonies}; i++) {
-      if (i >= uColonyCount) break;
-      vec4 c = uColonies[i];
-      float r = length(p.xz - c.xz) / (c.w * 1.7);
-      float dy = (p.y - (c.y + 0.9)) / 1.8;
-      held = max(held, min(1.0, uColony * gain * exp(-r * r - dy * dy)));
-    }
-    return held;
-  }
-
-  void hide() {
-    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-  }
-`
-
-/**
- * Dust and motes, as points.
- *
- *   dust   most of the air: very fine, most of it tiny and a few a little
- *          larger, silver and lavender. It carries the field in the middle
- *          distance; close by it thins, and far off it is gone, so it never
- *          reads as snow or a star field.
- *   motes  colony residents: a little larger, a soft body with a dim seed
- *          a little off its centre, like a spore. Held by a colony they brighten
- *          and lean toward aqua. They may pass closer to the camera.
- *
- * Neither has an outline: a rim would read as a bubble or a lens.
- */
-const POINT_VERTEX = /* glsl */ `
-  ${LOOK_GLSL}
-  attribute vec2 aRef;
+  uniform float uDebug;
   varying vec3 vColor;
   varying float vAlpha;
-  varying float vMote;
+  varying float vAspect;
+  varying float vAngle;
+  varying float vLobe;
+  varying float vSoft;
+  varying float vSeed;
+
+  const vec3 LAVENDER = vec3(0.80, 0.77, 0.95);
+  const vec3 SILVER_BLUE = vec3(0.70, 0.80, 1.0);
+  const vec3 BLUE_WHITE = vec3(0.88, 0.93, 1.0);
+  const vec3 MINT = vec3(0.70, 0.92, 0.85);
 
   void main() {
     vec4 s = texture2D(uPositions, aRef);
     vec4 traits = texture2D(uTraits, aRef);
-    int kind = airKind(traits.b);
-    vAlpha = 0.0;
-    if (kind != DUST && kind != MOTE) {
-      hide();
-      gl_PointSize = 0.0;
-      return;
-    }
     vec3 p = s.xyz;
+    float kind = traits.b;
     float tone = traits.a;
+    float u1 = fract(tone * 7.31);
+    float u2 = fract(tone * 13.7);
+    float u3 = fract(tone * 3.97);
+
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     float dist = -mv.z;
-    float held = airHeld(p, airHoldGain(kind));
 
     float size;
     float alpha;
-    if (kind == MOTE) {
-      size = mix(0.07, 0.13, tone);
-      alpha = 0.26 * (0.55 + 0.45 * held);
-      vColor = mix(mix(LAVENDER, SILVER, 0.4), AQUA, 0.45 * held);
-      alpha *= smoothstep(0.9, 2.4, dist) * (1.0 - 0.85 * smoothstep(16.0, 28.0, dist));
-      alpha *= airSky(p, 2.5, 5.0);
-      vMote = 1.0;
+    vAspect = 1.0;
+    vLobe = 0.0;
+    vSoft = 0.0;
+    if (kind < 0.02) {
+      // soft
+      size = mix(0.08, 0.15, u1);
+      alpha = mix(0.04, 0.08, u2);
+      vSoft = 1.0;
+      alpha *= smoothstep(0.5, 1.4, dist) * (1.0 - smoothstep(5.0, 11.0, dist));
+    } else if (kind < ${KIND.speck}) {
+      // speck
+      size = mix(0.026, 0.05, u1);
+      alpha = mix(0.18, 0.55, pow(u2, 1.4));
+      vAspect = mix(1.0, 2.6, u3 * u3);
+      vLobe = step(0.6, fract(tone * 5.3));
+      alpha *= smoothstep(1.2, 3.0, dist) * (1.0 - 0.85 * smoothstep(16.0, 36.0, dist));
+    } else if (kind < ${KIND.resident}) {
+      // resident: states of the same matter, lingering in a colony
+      if (u1 < 0.45) {
+        // soft floating matter
+        size = mix(0.06, 0.12, u2);
+        alpha = mix(0.22, 0.36, u3);
+        vSoft = 0.6;
+        vAspect = mix(1.0, 1.4, u3);
+      } else if (u1 < 0.82) {
+        // a translucent fragment, turning slowly
+        size = mix(0.07, 0.15, u2);
+        alpha = mix(0.26, 0.4, u3);
+        vAspect = mix(1.4, 2.6, u3);
+        vLobe = 1.0;
+      } else {
+        // an occasional brighter mote
+        size = mix(0.024, 0.045, u2);
+        alpha = mix(0.5, 0.75, u3);
+      }
+      // Only near a colony: it fades as it drifts away.
+      alpha *= smoothstep(0.03, 0.25, colonyNear(p));
+      alpha *= smoothstep(0.8, 2.0, dist) * (1.0 - smoothstep(16.0, 30.0, dist));
     } else {
-      size = mix(0.016, 0.05, tone * tone);
-      // Most grains faint, a few brighter.
-      alpha = mix(0.06, 0.4, pow(fract(tone * 7.3), 1.8));
-      vColor = mix(LAVENDER, SILVER, smoothstep(0.2, 0.8, fract(tone * 3.7)));
-      vColor = mix(vColor, AQUA, 0.12 * held);
-      alpha *= smoothstep(1.8, 4.5, dist) * (1.0 - smoothstep(13.0, 25.0, dist));
-      alpha *= airSky(p, 1.0, 4.0);
-      vMote = 0.0;
+      // grain
+      size = mix(0.01, 0.022, u1);
+      alpha = 0.07 + 0.45 * pow(u2, 2.2);
+      vAspect = mix(1.0, 1.35, u3);
+      alpha *= smoothstep(1.6, 4.0, dist) * (1.0 - 0.9 * smoothstep(13.0, 32.0, dist));
     }
-    float breath = 0.85 + 0.15 * sin(uTime * 0.23 + tone * 40.0);
-    alpha *= airFog(dist) * airEdge(p) * airBorn(s.w, 0.1, 0.14) * breath;
+    bool resident = kind >= ${KIND.speck} && kind < ${KIND.resident};
 
-    // Below a pixel and a half the light is spread rather than drawn as a
-    // crisp dot, and fades.
+    // Where the map is dense the matter reads a little thicker, where thin a
+    // little fainter, so the bands show as structure, not only as counts.
+    if (!resident) alpha *= 0.4 + 1.2 * airDensity(p.xz, uTime);
+
+    // Thinner with height over the ground: the sky stays nearly empty.
+    alpha *= 1.0 - 0.85 * smoothstep(1.5, 4.5, p.y - airFloor(p.xz));
+
+    // Against the sky a pale grain has far more contrast than against the
+    // land, and reads as a star. Look on past the grain along the line of
+    // sight: if no ground or water comes behind it, it dims.
+    if (kind >= 0.02) {
+      vec3 dir = normalize(p - cameraPosition);
+      float clear = 1e3;
+      for (int k = 1; k <= 6; k++) {
+        vec3 q = p + dir * (float(k) * 3.0);
+        clear = min(clear, q.y - airFloor(q.xz));
+      }
+      alpha *= mix(1.0, 0.25, smoothstep(-0.3, 0.6, clear));
+    }
+    alpha *= exp(-${FOG} * ${FOG} * dist * dist);
+    // Fade at the volume's sides, where grains wrap, and at birth and death.
+    vec2 side = abs(p.xz);
+    alpha *= 1.0 - smoothstep(${(AIR.halfWidth - 3).toFixed(1)}, ${AIR.halfWidth.toFixed(1)}, max(side.x, side.y));
+    alpha *= smoothstep(0.0, 0.12, s.w) * (1.0 - smoothstep(0.85, 1.0, s.w));
+
+    // Colour: by the grain, cooled over low ground and water, and shifted in
+    // broad slow regions across the scene.
+    vec3 col = mix(LAVENDER, SILVER_BLUE, smoothstep(0.35, 0.65, tone));
+    col = mix(col, BLUE_WHITE, smoothstep(0.75, 0.95, tone) * 0.8);
+    float low = 1.0 - smoothstep(0.15, 1.5, airFloor(p.xz) - uWaterY);
+    float region = 0.5 + 0.5 * sin(0.08 * p.x - 0.05 * p.z + 0.01 * uTime + 1.0);
+    col = mix(col, SILVER_BLUE, 0.35 * low);
+    col = mix(col, MINT, step(0.9, u1) * (0.3 + 0.45 * region * low));
+    // Near a colony: residents take its colours; other matter a passing tint.
+    if (resident) col = mix(SILVER_BLUE, colonyHue(p + vec3(tone * 4.0), uTime), 0.75);
+    else col = mix(col, colonyHue(p, uTime), 0.55 * colonyTint(p, uTime));
+    vColor = col;
+    if (uDebug > 0.5) {
+      // Only the air the colonies touch: held matter in mint, residents in pearl.
+      float held = 0.0;
+      for (int j = 0; j < ${28}; j++) {
+        if (j >= uObsCount) break;
+        held += obstacleMask(j, p, 1.0);
+      }
+      float near = colonyNear(p);
+      alpha = resident ? alpha * 2.0 : alpha * 2.5 * smoothstep(0.02, 0.2, max(near, held));
+      vColor = resident ? vec3(1.0, 0.85, 0.6) : mix(vec3(0.6, 0.62, 0.8), vec3(0.4, 1.0, 0.75), smoothstep(0.0, 0.4, held));
+    }
+
+    // Below a pixel and a quarter the light fades rather than spreading.
     float px = size * uScale / max(dist, 0.1);
-    float least = 1.5 * uDpr;
+    float least = 1.25 * uDpr;
     alpha *= min(1.0, (px / least) * (px / least));
     vAlpha = alpha;
-    gl_PointSize = clamp(px, least, 48.0 * uDpr);
+    vAngle = tone * 31.0 + uTime * mix(-0.05, 0.05, u2) * (resident ? 3.0 : 1.0);
+    vSeed = tone;
+    gl_PointSize = clamp(px, least, 40.0 * uDpr);
     gl_Position = projectionMatrix * mv;
   }
 `
@@ -245,289 +277,48 @@ const POINT_VERTEX = /* glsl */ `
 const POINT_FRAGMENT = /* glsl */ `
   varying vec3 vColor;
   varying float vAlpha;
-  varying float vMote;
+  varying float vAspect;
+  varying float vAngle;
+  varying float vLobe;
+  varying float vSoft;
+  varying float vSeed;
   void main() {
+    if (vAlpha <= 0.002) discard;
     vec2 q = gl_PointCoord * 2.0 - 1.0;
-    float d = dot(q, q);
-    if (d > 1.0 || vAlpha <= 0.0) discard;
-    float shape;
-    if (vMote > 0.5) {
-      // A soft body with a dim seed a little off its centre.
-      vec2 seed = q - vec2(0.18, -0.12);
-      shape = 0.55 * exp(-d * 2.6) * (1.0 - d) + 0.45 * exp(-dot(seed, seed) * 22.0);
-    } else {
-      shape = exp(-d * 4.5) * (1.0 - d);
-    }
-    gl_FragColor = vec4(vColor * vAlpha * shape, 1.0);
-  }
-`
-
-/**
- * Wisps: soft threads laid along the flow, low over the ground where the air
- * drains and runs. Each reaches back from its particle along the field in
- * four steps, so it bends with the swirls and the land, and is drawn as a
- * soft ribbon that swells from nothing at its tail and fades again just
- * before its head. Lengths and widths vary. They show only where the air
- * runs (they are born there, too), only now and then, as a gust catches
- * them, and never as a dot: a thread too short on screen fades out.
- */
-const WISP_VERTEX = /* glsl */ `
-  ${LOOK_GLSL}
-  attribute vec2 aRef;
-  varying vec3 vColor;
-  varying float vAlpha;
-  varying vec2 vUv;
-
-  vec4 clipOf(vec3 w) {
-    return projectionMatrix * modelViewMatrix * vec4(w, 1.0);
-  }
-
-  void main() {
-    vec4 st = texture2D(uPositions, aRef);
-    vec4 traits = texture2D(uTraits, aRef);
-    float pref = airHover(WISP, traits.r);
-    float flow = airFlow(WISP);
-    float gain = airHoldGain(WISP);
-    float step = ${(WISP_REACH / WISP_STEPS).toFixed(3)} * mix(0.55, 1.15, fract(traits.a * 9.7));
-
-    // Stations from the head (k = ${WISP_STEPS}) back to the tail (k = 0).
-    vec3 at[${WISP_STEPS + 1}];
-    at[${WISP_STEPS}] = st.xyz;
-    vec3 v0 = airVelocity(st.xyz, pref, flow, gain).xyz;
-    vec3 v = v0;
-    for (int k = ${WISP_STEPS - 1}; k >= 0; k--) {
-      at[k] = at[k + 1] - v * step;
-      if (k > 0) v = airVelocity(at[k], pref, flow, gain).xyz;
-    }
-
-    float s = position.x;
-    float side = position.y;
-    int k = int(floor(s * ${WISP_STEPS}.0 + 0.5));
-    vec3 w = at[0];
-    vec3 a = at[0];
-    vec3 b = at[1];
-    for (int i = 0; i <= ${WISP_STEPS}; i++) {
-      if (i == k) {
-        w = at[i];
-        a = at[max(i - 1, 0)];
-        b = at[min(i + 1, ${WISP_STEPS})];
-      }
-    }
-    vec4 ca = clipOf(a);
-    vec4 cb = clipOf(b);
-    vec4 cw = clipOf(w);
-    vec2 dir = (cb.xy / cb.w - ca.xy / ca.w) * uViewport * 0.5;
-    float len = length(dir);
-    vec2 n = len > 1e-4 ? vec2(-dir.y, dir.x) / len : vec2(0.0, 1.0);
-    float halfWidth = mix(1.8, 3.4, fract(traits.a * 4.3)) * uDpr;
-    cw.xy += n * side * halfWidth / (uViewport * 0.5) * cw.w;
-
-    vec4 ct = clipOf(at[0]);
-    vec4 cp = clipOf(st.xyz);
-    float lenPx = length((cp.xy / cp.w - ct.xy / ct.w) * uViewport * 0.5);
-    float dist = cp.w;
-    float alpha = mix(0.07, 0.13, fract(traits.a * 5.1));
-    alpha *= smoothstep(0.08, 0.2, length(v0));
-    alpha *= smoothstep(8.0 * uDpr, 24.0 * uDpr, lenPx);
-    alpha *= smoothstep(1.5, 4.0, dist) * (1.0 - smoothstep(14.0, 26.0, dist));
-    alpha *= airSky(st.xyz, 0.6, 2.0) * airFog(dist) * airEdge(st.xyz) * airBorn(st.w, 0.15, 0.2);
-    // Each shows only now and then, as a gust catches it.
-    alpha *= smoothstep(0.2, 0.8, sin(uTime * mix(0.15, 0.4, fract(traits.a * 6.1)) + traits.a * 50.0));
-    if (ct.w < 0.1 || cp.w < 0.1) alpha = 0.0;
-    vAlpha = alpha;
-    vColor = mix(ICE, SILVER, 0.3 * fract(traits.a * 3.3));
-    vUv = vec2(s, side);
-    gl_Position = cw;
-  }
-`
-
-const WISP_FRAGMENT = /* glsl */ `
-  varying vec3 vColor;
-  varying float vAlpha;
-  varying vec2 vUv;
-  void main() {
-    float along = smoothstep(0.0, 0.7, vUv.x) * (1.0 - smoothstep(0.88, 1.0, vUv.x));
-    float across = exp(-3.0 * vUv.y * vUv.y) * (1.0 - vUv.y * vUv.y);
-    gl_FragColor = vec4(vColor * vAlpha * along * across, 1.0);
-  }
-`
-
-/**
- * Flakes: a very few translucent membrane fragments, the colonies' own
- * material shed into the air. Flat, irregular, torn along one side, each
- * turning slowly in space: a slow yaw, a tilt that rocks, a roll in its own
- * plane. Mostly body, thicker toward one side, with only a faint rim; edge-on
- * it cools toward icy blue. Close to
- * the camera one softens as if out of focus, so the odd one passing near
- * reads as depth, not as an object in the way.
- */
-const FLAKE_VERTEX = /* glsl */ `
-  ${LOOK_GLSL}
-  attribute vec2 aRef;
-  varying vec2 vQ;
-  varying vec3 vColor;
-  varying float vAlpha;
-  varying float vBlur;
-  varying float vSeed;
-  varying float vEdgeOn;
-
-  void main() {
-    vec4 st = texture2D(uPositions, aRef);
-    vec4 traits = texture2D(uTraits, aRef);
-    vec3 p = st.xyz;
-    float tone = traits.a;
-
-    float yaw = tone * 40.0 + uTime * mix(-0.14, 0.14, fract(tone * 13.7));
-    float tilt = 0.55 + 0.5 * sin(uTime * (0.05 + 0.07 * fract(tone * 5.3)) + tone * 20.0);
-    float roll = tone * 9.0 + uTime * mix(0.05, 0.18, fract(tone * 3.9));
-    vec3 nrm = vec3(sin(tilt) * cos(yaw), cos(tilt), sin(tilt) * sin(yaw));
-    vec3 e1 = vec3(-sin(yaw), 0.0, cos(yaw));
-    vec3 e2 = cross(nrm, e1);
-    vec3 u = cos(roll) * e1 + sin(roll) * e2;
-    vec3 v = -sin(roll) * e1 + cos(roll) * e2;
-    float size = mix(0.08, 0.2, fract(tone * 7.1));
-    if (fract(tone * 23.0) > 0.85) size *= 1.6;
-    float aspect = mix(0.4, 0.75, fract(tone * 2.9));
-    vec3 world = p + (u * position.x + v * position.y * aspect) * size;
-
-    float dist = -(modelViewMatrix * vec4(p, 1.0)).z;
-    float facing = abs(dot(nrm, normalize(cameraPosition - p)));
-    float nearness = 1.0 - smoothstep(0.7, 3.5, dist);
-    vBlur = mix(0.04, 0.4, nearness);
-    float alpha = 0.34 * mix(1.0, 0.5, nearness) * smoothstep(0.35, 0.8, dist);
-    alpha *= 1.0 - 0.8 * smoothstep(16.0, 28.0, dist);
-    alpha *= airFog(dist) * airEdge(p) * airBorn(st.w, 0.1, 0.12) * airSky(p, 3.0, 6.0);
-    vColor = mix(mix(LAVENDER, SILVER, 0.35), AQUA, 0.25 * airHeld(p, airHoldGain(FLAKE)));
-    vEdgeOn = 1.0 - facing;
-    vAlpha = alpha;
-    vQ = position.xy;
-    vSeed = tone;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(world, 1.0);
-  }
-`
-
-const FLAKE_FRAGMENT = /* glsl */ `
-  varying vec2 vQ;
-  varying vec3 vColor;
-  varying float vAlpha;
-  varying float vBlur;
-  varying float vSeed;
-  varying float vEdgeOn;
-  const vec3 ICE = vec3(0.70, 0.84, 1.0);
-  void main() {
-    float rr = length(vQ);
-    float th = atan(vQ.y, vQ.x);
-    // An irregular, slightly torn outline, and one side cut across, as a
-    // fragment of a larger membrane.
-    float edge = 0.78 + 0.07 * sin(2.0 * th + vSeed * 31.0) + 0.08 * sin(3.0 * th + vSeed * 47.0) + 0.05 * sin(5.0 * th + vSeed * 19.0) + 0.03 * sin(9.0 * th + vSeed * 13.0);
-    float inside = 1.0 - smoothstep(edge - vBlur - 0.04, edge + vBlur * 0.5, rr);
-    float cutAngle = vSeed * 61.0;
-    float cut = dot(vQ, vec2(cos(cutAngle), sin(cutAngle)));
-    inside *= 1.0 - smoothstep(0.25 - vBlur, 0.32 + vBlur, cut);
-    if (inside <= 0.0 || vAlpha <= 0.0) discard;
-    // Thicker toward one side, thinning to the free edge: a body of
-    // material, not an outline.
-    float body = 0.26 * (0.4 + 0.6 * smoothstep(0.6, -0.8, dot(vQ, vec2(0.6, 0.8))));
-    float rim = 0.22 * exp(-pow((rr - edge * 0.92) / (0.06 + vBlur), 2.0));
-    // A faint shift of hue across it, as in a thin film.
-    vec3 col = mix(vColor, ICE, 0.3 * vEdgeOn + 0.2 * rim + 0.25 * smoothstep(-0.7, 0.9, vQ.x + 0.3 * vQ.y));
-    float a = (body + rim) * inside * (1.0 + 0.5 * vEdgeOn);
-    gl_FragColor = vec4(col * vAlpha * a, 1.0);
-  }
-`
-
-/**
- * Haze: a broad, soft veil per haze particle, facing the camera and wider
- * than tall; they pool over the basins and low ground and lift the palette.
- * A point sprite is capped in size and would show as separate discs, so
- * veils are quads. They are not depth-tested, which would cut them along the
- * ground in hard lines; instead each veil looks back along its line to the
- * camera and fades as a whole where the land stands in between.
- */
-const VEIL_VERTEX = /* glsl */ `
-  ${LOOK_GLSL}
-  attribute vec2 aRef;
-  varying vec2 vQ;
-  varying vec3 vColor;
-  varying float vAlpha;
-
-  void main() {
-    vec4 st = texture2D(uPositions, aRef);
-    vec4 traits = texture2D(uTraits, aRef);
-    vec3 p = st.xyz;
-    float tone = traits.a;
-
-    float clear = 1.0;
-    for (int k = 1; k < 8; k++) {
-      vec3 q = mix(p, cameraPosition, float(k) / 8.0);
-      clear = min(clear, smoothstep(-0.25, 0.35, q.y - airFloor(q.xz)));
-    }
-
-    vec4 mv = modelViewMatrix * vec4(p, 1.0);
-    float dist = -mv.z;
-    float size = mix(3.0, 6.0, tone);
-    mv.xy += position.xy * vec2(size * 0.62, size * 0.32);
-
-    float held = airHeld(p, airHoldGain(HAZE));
-    vColor = mix(mix(SILVER, LAVENDER, tone), AQUA, 0.2 * held);
-    float near = smoothstep(2.5, 7.0, dist);
-    float breath = 0.8 + 0.2 * sin(uTime * 0.11 + tone * 23.0);
-    vAlpha = 0.017 * clear * airFog(dist) * near * airBorn(st.w, 0.15, 0.2) * breath * airEdge(p) * (1.0 + 0.5 * held);
-    vQ = position.xy;
-    gl_Position = projectionMatrix * mv;
-  }
-`
-
-const VEIL_FRAGMENT = /* glsl */ `
-  varying vec2 vQ;
-  varying vec3 vColor;
-  varying float vAlpha;
-  void main() {
-    float d = dot(vQ, vQ);
+    float c = cos(vAngle);
+    float s = sin(vAngle);
+    q = vec2(c * q.x - s * q.y, s * q.x + c * q.y);
+    q.y *= vAspect;
+    float r = length(q);
+    // An irregular, lobed outline for some specks.
+    float th = atan(q.y, q.x);
+    float edge = 1.0 - vLobe * (0.16 * (0.5 + 0.5 * sin(2.0 * th + vSeed * 40.0)) + 0.12 * (0.5 + 0.5 * sin(3.0 * th + vSeed * 70.0)));
+    float d = r / edge;
     if (d > 1.0) discard;
-    float shape = exp(-d * 3.0) * (1.0 - d);
+    float shape = exp(-d * d * mix(3.2, 1.6, vSoft)) * (1.0 - smoothstep(0.75, 1.0, d));
     gl_FragColor = vec4(vColor * vAlpha * shape, 1.0);
   }
 `
 
-const additive = (extra) =>
-  new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    ...extra,
-  })
-
-/** One instanced quad mesh drawing the residents listed in `refs`. */
-function instanced(quad, refs, material) {
-  const geo = new THREE.InstancedBufferGeometry()
-  geo.index = quad.index
-  geo.setAttribute('position', quad.attributes.position)
-  geo.setAttribute('aRef', new THREE.InstancedBufferAttribute(refs, 2))
-  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 2, 0), 40)
-  return new THREE.Mesh(geo, material)
-}
-
-/** A wisp's ribbon: a station per step along it, tail to head, two sides. */
-function ribbon() {
-  const geo = new THREE.BufferGeometry()
-  const pos = []
-  const index = []
-  for (let k = 0; k <= WISP_STEPS; k++) {
-    pos.push(k / WISP_STEPS, -1, 0, k / WISP_STEPS, 1, 0)
-    if (k > 0) index.push(2 * k - 2, 2 * k - 1, 2 * k, 2 * k - 1, 2 * k + 1, 2 * k)
-  }
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
-  geo.setIndex(index)
-  return geo
-}
-
 /**
- * The scene's air: one particle system for the whole habitat, in which five
- * residents live — dust, wisps, motes, flakes and haze — moved by one field
- * (lib/air.js) that each reads in its own way.
+ * The scene's air: fine suspended matter for the whole habitat, moved by one
+ * divergence-free field and born where a composed density map allows
+ * (lib/air.js).
  */
-export default function AmbientAir({ field, elevation, waterLevel, density, drift, curl, colony, colonies }) {
+export default function AmbientAir({
+  field,
+  elevation,
+  waterLevel,
+  density,
+  drift,
+  curl,
+  wisps,
+  wispStrength,
+  colony,
+  colonies,
+  blooms,
+  haze,
+}) {
   const gl = useThree((s) => s.gl)
   const size = useThree((s) => s.size)
   const camera = useThree((s) => s.camera)
@@ -548,51 +339,49 @@ export default function AmbientAir({ field, elevation, waterLevel, density, drif
   }, [floor])
   useEffect(() => () => floorTexture.dispose(), [floorTexture])
 
-  // Each particle's own constants: hover, lifespan, resident, tone. And, per
-  // resident drawn as instances, which particles it is.
-  const { traits, seedTraits, refs } = useMemo(() => {
+  // Each grain's own constants: hover height, lifespan, size class, tone.
+  const { traits, seedTraits } = useMemo(() => {
     const random = mulberry32(4207)
     const data = new Float32Array(COUNT * 4)
-    const lists = { [KIND.WISP]: [], [KIND.FLAKE]: [], [KIND.HAZE]: [] }
     for (let i = 0; i < COUNT; i++) {
-      const b = random()
-      const kind = kindOf(b)
-      const [shortest, range] = LIFE[kind]
       data[i * 4] = random()
-      data[i * 4 + 1] = shortest + random() * range
-      data[i * 4 + 2] = b
+      data[i * 4 + 1] = LIFE[0] + random() * LIFE[1]
+      data[i * 4 + 2] = random()
       data[i * 4 + 3] = random()
-      lists[kind]?.push(i)
+      // Residents live 25–75 s.
+      if (isResident(data[i * 4 + 2])) data[i * 4 + 1] = 25 + 50 * random()
     }
     const t = new THREE.DataTexture(data, SIDE, SIDE, THREE.RGBAFormat, THREE.FloatType)
     t.needsUpdate = true
-    const refs = {}
-    for (const [kind, list] of Object.entries(lists)) {
-      const uv = new Float32Array(list.length * 2)
-      list.forEach((i, k) => {
-        uv[k * 2] = ((i % SIDE) + 0.5) / SIDE
-        uv[k * 2 + 1] = (Math.floor(i / SIDE) + 0.5) / SIDE
-      })
-      refs[kind] = { uv, index: Uint32Array.from(list) }
-    }
-    return { traits: t, seedTraits: data, refs }
+    return { traits: t, seedTraits: data }
   }, [])
 
-  // The simulation. Built once per landform; the controls are uniforms.
+  // The simulation. Built once per landform; the controls are uniforms. The
+  // first frame is already composed: grains start where the map puts them.
   const sim = useMemo(() => {
     const gpu = new GPUComputationRenderer(SIDE, SIDE, gl)
     const start = gpu.createTexture()
     const random = mulberry32(911)
     const a = start.image.data
     for (let i = 0; i < COUNT; i++) {
-      const kind = kindOf(seedTraits[i * 4 + 2])
-      const x = (random() - 0.5) * 2 * AIR.halfWidth
-      const z = (random() - 0.5) * 2 * AIR.halfWidth
+      let x = 0
+      let z = 0
+      let best = -1
+      for (let k = 0; k < TRIES; k++) {
+        const cx = (random() - 0.5) * 2 * AIR.halfWidth
+        const cz = (random() - 0.5) * 2 * AIR.halfWidth
+        const d = airDensity(cx, cz, 0, floor)
+        if (d > best) [best, x, z] = [d, cx, cz]
+        if (random() < d) {
+          ;[x, z] = [cx, cz]
+          break
+        }
+      }
       a[i * 4] = x
-      a[i * 4 + 1] = floor.at(x, z) + hoverHeight(kind, seedTraits[i * 4])
+      a[i * 4 + 1] = floor.at(x, z) + hoverHeight(seedTraits[i * 4])
       a[i * 4 + 2] = z
-      // Motes and haze are reborn soon, where they belong.
-      a[i * 4 + 3] = kind === KIND.MOTE || kind === KIND.HAZE ? 0.8 + 0.2 * random() : random()
+      // Residents are born again within seconds, in a colony.
+      a[i * 4 + 3] = isResident(seedTraits[i * 4 + 2]) ? 0.92 + 0.08 * random() : random()
     }
     const variable = gpu.addVariable('texturePosition', SIMULATE, start)
     gpu.setVariableDependencies(variable, [variable])
@@ -611,23 +400,7 @@ export default function AmbientAir({ field, elevation, waterLevel, density, drif
   }, [gl, traits, seedTraits, floor])
   useEffect(() => () => sim?.gpu.dispose(), [sim])
 
-  // The residents' drawings.
-  const layers = useMemo(() => {
-    const material = (vertexShader, fragmentShader, extra = {}) =>
-      additive({
-        uniforms: {
-          ...airUniforms(),
-          uPositions: { value: null },
-          uTraits: { value: traits },
-          uScale: { value: 1 },
-          uDpr: { value: 1 },
-          uViewport: { value: new THREE.Vector2(1, 1) },
-        },
-        vertexShader,
-        fragmentShader,
-        ...extra,
-      })
-
+  const points = useMemo(() => {
     const geo = new THREE.BufferGeometry()
     const ref = new Float32Array(COUNT * 2)
     for (let i = 0; i < COUNT; i++) {
@@ -638,37 +411,35 @@ export default function AmbientAir({ field, elevation, waterLevel, density, drif
     // Positions come from the texture; this is only for three's bookkeeping.
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(COUNT * 3), 3))
     geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 2, 0), 40)
-    const points = new THREE.Points(geo, material(POINT_VERTEX, POINT_FRAGMENT))
-
-    const plane = new THREE.PlaneGeometry(2, 2)
-    const wisps = instanced(ribbon(), refs[KIND.WISP].uv, material(WISP_VERTEX, WISP_FRAGMENT, { side: THREE.DoubleSide }))
-    const flakes = instanced(plane, refs[KIND.FLAKE].uv, material(FLAKE_VERTEX, FLAKE_FRAGMENT, { side: THREE.DoubleSide }))
-    const veils = instanced(plane, refs[KIND.HAZE].uv, material(VEIL_VERTEX, VEIL_FRAGMENT, { depthTest: false }))
-    return {
-      points,
-      instanced: [
-        { mesh: veils, index: refs[KIND.HAZE].index, order: 4 },
-        { mesh: wisps, index: refs[KIND.WISP].index, order: 5 },
-        { mesh: flakes, index: refs[KIND.FLAKE].index, order: 6 },
-      ],
-    }
-  }, [traits, refs])
+    const material = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: {
+        ...airUniforms(),
+        uPositions: { value: null },
+        uTraits: { value: traits },
+        uScale: { value: 1 },
+        uDpr: { value: 1 },
+        uDebug: { value: DEBUG ? 1 : 0 },
+      },
+      vertexShader: POINT_VERTEX,
+      fragmentShader: POINT_FRAGMENT,
+    })
+    return new THREE.Points(geo, material)
+  }, [traits])
   useEffect(
     () => () => {
-      layers.points.geometry.dispose()
-      layers.points.material.dispose()
-      for (const { mesh } of layers.instanced) {
-        mesh.geometry.dispose()
-        mesh.material.dispose()
-      }
+      points.geometry.dispose()
+      points.material.dispose()
     },
-    [layers],
+    [points],
   )
 
-  const colonyData = useMemo(
-    () => (colonies ?? []).slice(0, AIR.maxColonies).map((c) => new THREE.Vector4(c.x, c.y, c.z, c.radius)),
-    [colonies],
-  )
+  // The colonies as the air sees them (phase 3): their membranes and bounds.
+  const colonyData = useMemo(() => colonyAirData(colonies, blooms), [colonies, blooms])
+  const footprints = useMemo(() => (DEBUG ? obstacleOutlines(colonyData) : null), [colonyData])
+  const arrows = useMemo(() => (DEBUG ? flowArrows() : null), [])
 
   const time = useRef(0)
 
@@ -676,42 +447,44 @@ export default function AmbientAir({ field, elevation, waterLevel, density, drif
     if (!sim) return
     const dt = Math.min(delta, 0.05)
     time.current += dt
-    const state = { t: time.current, drift, curl, colony, floor, floorTexture, colonyData }
+    const state = { t: time.current, drift, curl, floor, floorTexture, colonyData, colony }
 
-    // Simulate.
     const u = sim.variable.material.uniforms
     setAir(u, state)
     u.uDelta.value = dt
     sim.gpu.compute()
 
-    // Draw: every resident among the particles Density draws.
-    const positions = sim.gpu.getCurrentRenderTarget(sim.variable).texture
+    if (arrows) updateArrows(arrows, { t: time.current, drift, curl, floor, colonies, colonyData, colony })
+
+    const pu = points.material.uniforms
+    setAir(pu, state)
+    pu.uPositions.value = sim.gpu.getCurrentRenderTarget(sim.variable).texture
     const dpr = gl.getPixelRatio()
-    const fov = (camera.fov * Math.PI) / 180
-    const drawn = Math.round(COUNT * density)
-    for (const material of [layers.points.material, ...layers.instanced.map((l) => l.mesh.material)]) {
-      const mu = material.uniforms
-      setAir(mu, state)
-      mu.uPositions.value = positions
-      mu.uScale.value = (size.height * dpr) / (2 * Math.tan(fov / 2))
-      mu.uDpr.value = dpr
-      mu.uViewport.value.set(size.width * dpr, size.height * dpr)
-    }
-    layers.points.geometry.setDrawRange(0, drawn)
-    for (const { mesh, index } of layers.instanced) {
-      let shown = 0
-      while (shown < index.length && index[shown] < drawn) shown++
-      mesh.geometry.instanceCount = shown
-    }
+    pu.uScale.value = (size.height * dpr) / (2 * Math.tan((camera.fov * Math.PI) / 360))
+    pu.uDpr.value = dpr
+    points.geometry.setDrawRange(0, Math.round(COUNT * density))
   })
 
   if (!sim) return null
   return (
     <group>
-      {layers.instanced.map(({ mesh, order }) => (
-        <primitive key={mesh.uuid} object={mesh} frustumCulled={false} renderOrder={order} />
-      ))}
-      <primitive object={layers.points} frustumCulled={false} renderOrder={5} />
+      <primitive object={points} frustumCulled={false} renderOrder={5} />
+      <AirHaze floor={floor} floorTexture={floorTexture} time={time} drift={drift} amount={haze} />
+      {footprints && <primitive object={footprints} />}
+      {arrows && <primitive object={arrows.lines} frustumCulled={false} renderOrder={9} />}
+      <AirWisps
+        floor={floor}
+        floorTexture={floorTexture}
+        time={time}
+        drift={drift}
+        curl={curl}
+        amount={wisps}
+        strength={wispStrength}
+        colonyData={colonyData}
+        colony={colony}
+        debug={DEBUG}
+      />
+      <AirFragments floor={floor} time={time} drift={drift} curl={curl} colonyData={colonyData} colony={colony} />
     </group>
   )
 }
@@ -722,26 +495,94 @@ function airUniforms() {
     uTime: { value: 0 },
     uDrift: { value: 0.5 },
     uCurl: { value: 0.5 },
-    uColony: { value: 0.5 },
-    uColonies: { value: Array.from({ length: AIR.maxColonies }, () => new THREE.Vector4()) },
-    uColonyCount: { value: 0 },
     uFloor: { value: null },
     uFloorMin: { value: 0 },
     uFloorSpan: { value: 1 },
     uFieldSize: { value: 26 },
     uWaterY: { value: 0 },
+    ...colonyAirUniforms(),
   }
 }
 
-function setAir(u, { t, drift, curl, colony, floor, floorTexture, colonyData }) {
+function setAir(u, { t, drift, curl, floor, floorTexture, colonyData, colony }) {
   u.uTime.value = t
   u.uDrift.value = drift
   u.uCurl.value = curl
-  u.uColony.value = colony
   u.uFloor.value = floorTexture
   u.uFloorMin.value = floor.min
   u.uFloorSpan.value = floor.max - floor.min
   u.uWaterY.value = floor.waterY
-  u.uColonyCount.value = colonyData.length
-  colonyData.forEach((v, i) => u.uColonies.value[i].copy(v))
+  setColonyAir(u, colonyData, colony)
+}
+
+function isResident(b) {
+  return b >= KIND.speck && b < KIND.resident
+}
+
+/** Internal check only: the colonies' influence as flow arrows. */
+const ARROWS = { spacing: 0.38, extent: 1.7, height: 0.6, max: 9000, every: 1 }
+
+function flowArrows() {
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ARROWS.max * 6), 3))
+  geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(ARROWS.max * 6), 3))
+  geo.setDrawRange(0, 0)
+  const lines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthTest: false }))
+  return { lines, last: -Infinity }
+}
+
+/**
+ * Over each colony, a grid of arrows just above the ground, from the same
+ * field the particles move in: its direction and speed with the colonies,
+ * coloured by what the colony does there (mint: slowed; pearl: rising;
+ * grey: unchanged). Recomputed once a second.
+ */
+function updateArrows(arrows, { t, drift, curl, floor, colonies, colonyData, colony }) {
+  if (t - arrows.last < ARROWS.every) return
+  arrows.last = t
+  const pos = arrows.lines.geometry.attributes.position.array
+  const col = arrows.lines.geometry.attributes.color.array
+  const controls = { drift, curl }
+  const held = { strength: colony, obstacles: colonyData.obstacles }
+  let n = 0
+  for (const c of colonies ?? []) {
+    const R = ARROWS.extent * c.radius
+    for (let x = c.x - R; x <= c.x + R; x += ARROWS.spacing) {
+      for (let z = c.z - R; z <= c.z + R; z += ARROWS.spacing) {
+        if (n >= ARROWS.max || Math.hypot(x - c.x, z - c.z) > R) continue
+        const y = floor.at(x, z) + ARROWS.height
+        const v = airVelocity([x, y, z], ARROWS.height, t, controls, floor, held)
+        const v0 = airVelocity([x, y, z], ARROWS.height, t, controls, floor, null)
+        const ratio = Math.hypot(v[0], v[2]) / Math.max(1e-6, Math.hypot(v0[0], v0[2]))
+        const slowed = Math.min(1, Math.max(0, (1 - ratio) / 0.5))
+        const rising = Math.min(1, Math.max(0, (v[1] - v0[1]) / 0.03))
+        const head = [0.55 + 0.45 * rising - 0.1 * slowed, 0.6 + 0.4 * slowed, 0.65 + 0.15 * slowed - 0.2 * rising]
+        const L = 5
+        pos.set([x, y, z, x + v[0] * L, y + v[1] * L, z + v[2] * L], n * 6)
+        col.set([head[0] * 0.15, head[1] * 0.15, head[2] * 0.15, ...head], n * 6)
+        n++
+      }
+    }
+  }
+  arrows.lines.geometry.setDrawRange(0, n * 2)
+  arrows.lines.geometry.attributes.position.needsUpdate = true
+  arrows.lines.geometry.attributes.color.needsUpdate = true
+}
+
+/** Internal check only: each obstacle's footprint, as an ellipse at its base. */
+function obstacleOutlines({ obstacles }) {
+  const pos = []
+  for (const o of obstacles) {
+    for (let k = 0; k < 48; k++) {
+      for (const kk of [k, k + 1]) {
+        const a = (kk / 48) * Math.PI * 2
+        const u = Math.cos(a) * o.la
+        const v = Math.sin(a) * o.lc
+        pos.push(o.c[0] + o.b[0] * u - o.b[1] * v, o.c[1] + 0.05, o.c[2] + o.b[1] * u + o.b[0] * v)
+      }
+    }
+  }
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  return new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: '#7fe8c4', transparent: true, opacity: 0.6, depthTest: false }))
 }

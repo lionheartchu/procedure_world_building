@@ -54,7 +54,7 @@ const UP = [0, 1, 0]
  * part (anchor, birth, look, sway) are held as state and stamped onto every
  * vertex written until they change.
  */
-class FormWriter {
+export class FormWriter {
   constructor() {
     this.position = []
     this.normal = []
@@ -231,7 +231,7 @@ const UNIT_SPHERE = (() => {
   }
 })()
 
-function sphere(w, c, r) {
+export function sphere(w, c, r) {
   const { position, normal, index } = UNIT_SPHERE
   const base = w.count
   for (let k = 0; k < position.length; k += 3) {
@@ -464,6 +464,13 @@ const ANCHOR_SHAPE = { ...BLOOM_SHAPE, crest: [0.5, 0.75], lean: [72, 80], peel:
  * version before this one — a row of separate sails, which read as related
  * pieces rather than one body.
  */
+/**
+ * Each membrane's surface as its builder made it (columns of points from the
+ * foot to the rim), kept for whatever grows on it: the branching network's
+ * climbing veins (branching.js). Keyed by the bloom instance.
+ */
+export const bloomSurfaces = new WeakMap()
+
 function buildBlooms(instances, world, ribs) {
   const solid = new FormWriter()
   const film = new FormWriter()
@@ -568,6 +575,7 @@ function buildBlooms(instances, world, ribs) {
       }
       columns.push({ column, L, w })
     }
+    bloomSurfaces.set(inst, { columns })
 
     const alpha = 0.26 + 0.28 * (1 - inst.openness)
     const tall = crests[tallest]
@@ -648,47 +656,6 @@ function rotateAbout(v, axis, angle) {
   const s = Math.sin(angle)
   return add(add(scale(v, c), scale(cross(axis, v), s)), scale(axis, dot(axis, v) * (1 - c)))
 }
-
-/* --- Colony ground ------------------------------------------------------- */
-
-/**
- * A faint luminous stain on the ground under each colony, drawn out toward
- * the water and fading at a lobed edge: the ground's own response to what is
- * growing on it. A separate draped mesh, so the terrain itself is untouched.
- * Intensity rides in `look.x` and comes up with the colony as it grows.
- */
-function buildHalos(colonies, world) {
-  const w = new FormWriter()
-  for (const c of colonies) {
-    const random = mulberry32(c.index * 7 + 3)
-    const seed = random() * 6
-    const R = c.radius * 1.45
-    const I = 48
-    const J = 14
-    const point = (i, j) => {
-      const phi = (i / I) * Math.PI * 2
-      const s = j / J
-      const cx = Math.cos(phi)
-      const cz = Math.sin(phi)
-      const along = cx * c.dir[0] + cz * c.dir[1]
-      const r = R * s * (1 + 0.6 * Math.max(0, along)) * (1 + 0.16 * Math.sin(3 * phi + seed))
-      const x = c.x + cx * r
-      const z = c.z + cz * r
-      return [x, groundAt(world, x, z) + 0.05, z]
-    }
-    w.set({ anchor: [c.x, c.y, c.z], birth: c.birth, span: 0.35, glow: 0, alpha: 1, open: 0, sway: 0 })
-    surfaceGrid(w, I, J, point, {
-      wrap: true,
-      uv: (i, j) => {
-        const p = point(i, j)
-        return [p[0], p[2]]
-      },
-      state: (_, j) => ({ tone: (0.35 + 0.65 * c.maturity) * Math.pow(1 - j / J, 1.8) }),
-    })
-  }
-  return w.toGeometry()
-}
-
 
 /* --- Colony tissue ------------------------------------------------------- */
 
@@ -1036,7 +1003,7 @@ function buildBeads(instances) {
  * Bridgework, so soloing Membrane Bloom shows the membrane without them.
  */
 export function buildScatterGeometry(scatter, world) {
-  const { layers, colonies } = scatter
+  const { layers } = scatter
   const structure = { solid: new FormWriter(), film: new FormWriter() }
   buildBridgework(layers.bridgework.instances, world, structure)
   const bloom = buildBlooms(layers.bloom.instances, world, structure.solid)
@@ -1045,7 +1012,6 @@ export function buildScatterGeometry(scatter, world) {
     bloom,
     shard: buildShards(layers.shard.instances),
     bead: buildBeads(layers.bead.instances),
-    halo: { glow: buildHalos(colonies, world) },
     tissue: { skin: buildTissue(scatter, world) },
   }
 }

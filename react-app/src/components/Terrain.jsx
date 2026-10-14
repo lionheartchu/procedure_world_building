@@ -5,6 +5,7 @@ import { buildHeightGrid } from '../lib/field'
 import { SED_DISPLAY, SIM_RES } from '../lib/sediment'
 import { STREAM_RES } from '../lib/streams'
 import { PALETTE, RAMP } from '../lib/palette'
+import { ACCUMULATION_GLSL, accumulationUniforms, setAccumulation } from '../lib/formMaterial'
 
 export const FIELD_SIZE = 26
 
@@ -60,6 +61,9 @@ const REFLECTED_LIGHT_GLSL = /* glsl */ `
 `
 
 const colorUniform = (rgb) => ({ value: new THREE.Color(rgb[0], rgb[1], rgb[2]) })
+/** The water's reflected horizon, and the sky dome's own (Atmosphere.jsx). */
+const WATER_HORIZON = new THREE.Color('#4A4E84')
+const SKY_HORIZON = new THREE.Color('#3B3F70')
 const hexUniform = (hex) => ({ value: new THREE.Color(hex) })
 
 /**
@@ -125,6 +129,14 @@ function createTerrainMaterial() {
         uWaterY: { value: 0 },
         uCaustics: { value: 0 },
         uCaustic: hexUniform('#B7B2E0'),
+        // Scatter only: the light held in what the colonies gathered.
+        ...accumulationUniforms(FIELD_SIZE),
+        // Scatter only: the ground's cleaned palette (shadow response,
+        // record and light that keep the ground's own colour).
+        uGrade: { value: 0 },
+        uShadowHue: hexUniform('#222B62'),
+        // Explore only: Underwater visibility. 0 leaves every tab as it was.
+        uUnderwater: { value: 0 },
       },
     ]),
     vertexShader: /* glsl */ `
@@ -212,6 +224,9 @@ function createTerrainMaterial() {
       uniform float uExposureHi;
       uniform float uActivityInfluence;
       uniform float uRelief;
+      uniform float uGrade;
+      uniform vec3 uShadowHue;
+      uniform float uUnderwater;
       uniform sampler2D uStream;
       uniform float uFieldSize;
       uniform float uPulse;
@@ -232,6 +247,8 @@ function createTerrainMaterial() {
 
       #include <common>
       #include <fog_pars_fragment>
+
+      ${ACCUMULATION_GLSL}
 
       /** Cheap smooth mottling. Sines rather than a hash: no grain, no tables. */
       float softNoise(vec3 p) {
@@ -356,7 +373,16 @@ function createTerrainMaterial() {
           // threshold on sediment, so a thin dusting reads as nothing and only
           // real accumulation lights up. The pulse never touches the base.
           vec3 dormant = mix(rampColor(vHeight - uWaterLevel) * 0.38, uDeepBasin, 0.25);
-          vec3 residue = mix(dormant, uSedimentTint * 0.85, residueMask * uActivityInfluence);
+          // The record pales the ground toward the sediment's tint. In
+          // Scatter (uGrade) less of it, only where it is really thick, and
+          // broken by the deposit's grain: as a broad smooth mix it laid soft
+          // grey-lavender smears over the dark ground.
+          float recordMix = residueMask * uActivityInfluence;
+          if (uGrade > 0.0) {
+            float grainR = 0.7 + 0.6 * valueNoise(vWorldPos.xz * 6.5 + 11.0);
+            recordMix = mix(recordMix, smoothstep(0.3, 0.8, sed) * uActivityInfluence * 0.6 * grainR, uGrade);
+          }
+          vec3 residue = mix(dormant, uSedimentTint * 0.85, recordMix);
           lit = residue * (ambient + uLightColor * wrap * 0.7);
 
           // The glow belongs to the deposit rather than being laid over it:
@@ -370,7 +396,27 @@ function createTerrainMaterial() {
           // Slow and spatial, so it travels across the ground rather than
           // flashing the whole scene at once.
           float pulse = 0.65 + 0.35 * sin(uTime * 0.4 + vWorldPos.x * 0.11 + vWorldPos.z * 0.08);
-          emit += uSedimentTint * residueMask * residueMask * uPulse * 0.18 * pulse * held * through;
+
+          // Scatter: the light held in what the colonies gathered
+          // (accumulation.js). Where it is, the ground is itself paler and
+          // more translucent, in that light's tone — the record carries it
+          // most, bare ground some, broken by the deposit's grain — and the
+          // denser the matter, the more it gives off. Where nothing gathered,
+          // the record's own glow is held down, so the light has somewhere
+          // to come from and the quiet ground stays quiet.
+          vec4 acc = accumAt(vWorldPos.xz);
+          float gathered = acc.r;
+          float quiet = uAccumOn > 0.0 ? mix(0.45, 1.0, smoothstep(0.0, 0.35, gathered)) : 1.0;
+          if (uAccumOn > 0.0) {
+            vec3 tone = accumTone(acc.b);
+            float carry = (0.45 + 0.55 * residueMask) * (0.8 + 0.4 * valueNoise(vWorldPos.xz * 2.6 + 3.0));
+            // Brighter in its own colour (multiplied, not mixed toward a
+            // pale tone, which greyed the darks where the light overlapped).
+            lit *= 1.0 + 0.7 * gathered * carry;
+            emit += tone * (gathered * 0.16 + gathered * gathered * 0.22 + acc.g * 0.1) * carry * held * through;
+          }
+
+          emit += uSedimentTint * residueMask * residueMask * uPulse * 0.18 * pulse * held * through * quiet;
           emit += uMint * pow(act, 1.6) * uPulse * 0.9 * pulse * held * through;
 
           // Relief (Scatter only): the landform given body. Plateaus stand
@@ -389,7 +435,8 @@ function createTerrainMaterial() {
             float foot = (1.0 - smoothstep(0.0, 0.12, above)) * smoothstep(0.12, 0.45, 1.0 - ns.y) * (1.0 - channel);
             lit *= mix(1.0, mix(0.82, 1.45, plateau) * (1.0 - 0.3 * foot), uRelief);
             lit = mix(lit, lit * vec3(1.04, 1.0, 1.12), plateau * uRelief);
-            emit += uSedimentTint * shoulder * 0.12 * uRelief;
+            // A shoulder near gathered matter catches more of its light.
+            emit += uSedimentTint * shoulder * 0.12 * uRelief * (uAccumOn > 0.0 ? 0.6 + 1.6 * gathered : 1.0);
           }
 
         } else {
@@ -474,7 +521,40 @@ function createTerrainMaterial() {
           }
         }
 
-        gl_FragColor = vec4(lit + emit, 1.0);
+        // Underwater visibility (Explore): the lit ground below the water
+        // line lifted in its own colour — multiplied, so its shading and the
+        // way it darkens with depth hold — with a little of the record's
+        // pale lilac, so the darkest basin floor comes up violet rather than
+        // grey. From nothing at the water line (tidal, as the veil above it)
+        // to full a few centimetres down, so the shore shows no seam. Only
+        // the lit surface: what glows (the mint of active flow, the held
+        // light) keeps its strength, so nothing turns teal. At full it
+        // brings the floor up toward the land, not past it; at 2.1x it
+        // outshone the land and the water read as a pale film.
+        if (uUnderwater > 0.0) {
+          float under = smoothstep(0.0, 0.04 * E, uWaterY - vWorldPos.y) * uUnderwater;
+          lit = lit * (1.0 + under * 0.6) + uSedimentTint * under * 0.03;
+        }
+
+        vec3 col = lit + emit;
+
+        // Scatter: the ground's shadow response. Its darks were already a
+        // saturated indigo, but lifted: nothing on the ground went below
+        // about 0.16 in value, so haze and light laid over them turned them
+        // grey. Here a toe takes the darks deeper in their own colour
+        // (scaled, so hue and saturation hold), easing back to unchanged by
+        // the low mids, and turns them only slightly cooler. (Mapping them
+        // onto a blue at equal luminance made them a saturated royal blue.)
+        if (uGrade > 0.0) {
+          float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+          float toe = mix(0.55, 1.0, smoothstep(0.0, 0.07, l));
+          float shade = 1.0 - smoothstep(0.02, 0.1, l);
+          vec3 cool = uShadowHue * (l / max(dot(uShadowHue, vec3(0.2126, 0.7152, 0.0722)), 1e-4));
+          col = mix(col, cool, shade * 0.3 * uGrade);
+          col *= mix(1.0, toe, uGrade);
+        }
+
+        gl_FragColor = vec4(col, 1.0);
 
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -517,6 +597,10 @@ function createWaterMaterial() {
         uWater: { value: 0.6 },
         uLight: { value: 0 },
         uClarity: { value: 1 },
+        // Explore only: Underwater visibility (0 = as before) thins the veil
+        // and turns its body a little toward violet.
+        uUnderwater: { value: 0 },
+        uVeilLift: hexUniform('#5C5290'),
         uShallow: hexUniform('#2E3160'),
         uDeepWater: hexUniform('#141735'),
         uHorizon: hexUniform('#4A4E84'),
@@ -549,6 +633,8 @@ function createWaterMaterial() {
       uniform float uWater;
       uniform float uLight;
       uniform float uClarity;
+      uniform float uUnderwater;
+      uniform vec3 uVeilLift;
       uniform vec3 uShallow;
       uniform vec3 uDeepWater;
       uniform vec3 uHorizon;
@@ -613,6 +699,10 @@ function createWaterMaterial() {
         sky += uHorizon * 0.35 * (1.0 - smoothstep(0.0, 0.12, abs(r.y)));
 
         vec3 body = mix(uShallow, uDeepWater, deep);
+        // Underwater visibility: a clearer, more violet body (below, a
+        // thinner veil). What makes it read as a surface — the sky it
+        // reflects, its glint — stays as it is.
+        if (uUnderwater > 0.0) body = mix(body, uVeilLift, uUnderwater * 0.35);
         vec3 col = mix(body, sky, fres);
 
         // One broad, dim glint. Soft enough to read as a sheen on the far
@@ -630,6 +720,7 @@ function createWaterMaterial() {
         // deepest basin lets the terrain's form read through, so the terrain
         // stays the subject and the water reads as something pooled in it.
         float alpha = mix(0.14, 0.46, deep) * uClarity;
+        if (uUnderwater > 0.0) alpha *= 1.0 - 0.45 * uUnderwater;
         alpha = shore * bounds * clamp(alpha + fres * 0.4 + glint * 0.2 + light * 0.06, 0.0, 0.8);
         // The Water surface control runs the whole way to nothing, so the
         // ground light can be judged without the veil over it.
@@ -682,6 +773,11 @@ function createStreamWaterMaterial() {
         // A paler horizon made the grazing reflection read as mist.
         uShallow: hexUniform('#262B5C'),
         uHorizon: hexUniform('#4E5288'),
+        // The still water line (no tide), where the stream becomes the basin.
+        uWaterY: { value: 0 },
+        // Explore only: Underwater visibility, as the basin's water.
+        uUnderwater: { value: 0 },
+        uVeilLift: hexUniform('#5C5290'),
         uZenith: hexUniform('#12153A'),
         uGlint: hexUniform('#D8D3F2'),
         uLightDir: { value: new THREE.Vector3(-0.6, 0.42, -0.55).normalize() },
@@ -697,9 +793,11 @@ function createStreamWaterMaterial() {
       uniform float uMode;
       uniform float uPulse;
       uniform float uMembrane;
+      uniform float uWaterY;
       varying vec2 vUv;
       varying vec4 vFlow;
       varying vec3 vWorldPos;
+      varying float vFloat;
       #include <common>
       #include <fog_pars_vertex>
       void main() {
@@ -716,6 +814,15 @@ function createStreamWaterMaterial() {
         }
         vec3 p = position;
         p.y += sed * uSedLift + breathe;
+        // Where the stream reaches the water line it hands over to the basin's
+        // water at the same level. But the sediment lifts it with its bed, and
+        // after a long History the record under the water is full, so its
+        // last stretch would float a whole lift above the basin: a flat,
+        // rippled plate over the drop (study 09). Only there — near the water
+        // line and lifted by more than a centimetre or so — it fades out, and
+        // the stream ends on its delta. Unlifted, it meets the basin as before.
+        float nearWater = 1.0 - smoothstep(0.0, 0.08, position.y - uWaterY);
+        vFloat = nearWater * smoothstep(0.01, 0.05, sed * uSedLift);
         vec4 world = modelMatrix * vec4(p, 1.0);
         vWorldPos = world.xyz;
         vec4 mvPosition = viewMatrix * world;
@@ -725,6 +832,8 @@ function createStreamWaterMaterial() {
     `,
     fragmentShader: /* glsl */ `
       uniform float uTime;
+      uniform float uUnderwater;
+      uniform vec3 uVeilLift;
       uniform vec3 uShallow;
       uniform vec3 uHorizon;
       uniform vec3 uZenith;
@@ -733,15 +842,33 @@ function createStreamWaterMaterial() {
       varying vec2 vUv;
       varying vec4 vFlow;
       varying vec3 vWorldPos;
+      varying float vFloat;
       #include <common>
       #include <fog_pars_fragment>
       ${NOISE_GLSL}
+      // Broad, soft ripples in metres, drifting downstream at the stream's
+      // local speed, for one cycle that started fresh somewhere in the noise.
+      const float FLOW_CYCLE = 2.0;
+      vec2 ripples(float c) {
+        float k = floor(c);
+        float t = fract(c) * FLOW_CYCLE * vFlow.y;
+        vec2 q = vec2(vUv.x * 1.4, vUv.y * 0.9 - t * 0.6) + vec2(fract(k * 0.618), fract(k * 0.382)) * 41.0;
+        return vec2(valueNoise(q), valueNoise(q * 2.1 + vec2(4.3, -t * 0.4)));
+      }
       void main() {
-        float t = uTime * vFlow.y;
-        // Broad, soft ripples in metres, drifting downstream.
-        vec2 q = vec2(vUv.x * 1.4, vUv.y * 0.9 - t * 0.6);
-        float a = valueNoise(q);
-        float b = valueNoise(q * 2.1 + vec2(4.3, -t * 0.4));
+        // Time times a speed that changes along the stream shears the
+        // ripples: neighbouring rows drift apart further every second, until
+        // after a minute they are bands across the flow and after ten a comb,
+        // worst where a steep reach slows into a flat pool (study 09). So the
+        // drift runs in two staggered cycles, each restarting while its
+        // weight is zero, and the shear never grows past one cycle's worth;
+        // the blend keeps the ripples' contrast.
+        float c = uTime / FLOW_CYCLE;
+        float w = 1.0 - abs(1.0 - 2.0 * fract(c));
+        vec2 ab = mix(ripples(c + 0.5), ripples(c), w);
+        ab = clamp(0.5 + (ab - 0.5) / sqrt(w * w + (1.0 - w) * (1.0 - w)), 0.0, 1.0);
+        float a = ab.x;
+        float b = ab.y;
         vec3 nrm = normalize(vec3((a - 0.5) * 0.22 + (b - 0.5) * 0.08, 1.0, (b - 0.5) * 0.12));
 
         vec3 viewDir = normalize(cameraPosition - vWorldPos);
@@ -749,7 +876,8 @@ function createStreamWaterMaterial() {
         float fres = 0.04 + 0.96 * pow(1.0 - facing, 4.0);
         vec3 r = reflect(-viewDir, nrm);
         vec3 sky = mix(uHorizon, uZenith, smoothstep(-0.02, 0.5, r.y));
-        vec3 col = mix(uShallow, sky, 0.3 + 0.6 * fres);
+        vec3 body = uUnderwater > 0.0 ? mix(uShallow, uVeilLift, uUnderwater * 0.35) : uShallow;
+        vec3 col = mix(body, sky, 0.3 + 0.6 * fres);
         // Movement across the whole width: soft broad bands of reflected
         // light where the ripples tilt toward the sky, drifting downstream;
         // one narrow, dim glint.
@@ -765,6 +893,8 @@ function createStreamWaterMaterial() {
         float overhang = 1.0 - smoothstep(0.1, 0.25, depth);
         float side = 1.0 - smoothstep(0.85, 1.0, abs(vFlow.w));
         float alpha = vFlow.x * shore * overhang * side * (0.62 + 0.25 * fres + sheen * 0.1 + glint * 0.2);
+        alpha *= 1.0 - vFloat;
+        if (uUnderwater > 0.0) alpha *= 1.0 - 0.35 * uUnderwater;
         gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.8));
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -787,6 +917,7 @@ export default function Terrain({
   wireframe,
   shader,
   streams,
+  accumulation = null,
 }) {
   const { resolution, elevation, waterLevel } = params
 
@@ -902,6 +1033,7 @@ export default function Terrain({
     }
 
     set('uSediment', texture)
+    setAccumulation(uniforms, accumulation)
     set('uWaterLevel', waterLevel)
     set('uSedLift', elevation * SEDIMENT_LIFT)
     set('uElevation', elevation)
@@ -914,6 +1046,12 @@ export default function Terrain({
     // exactly as it did before the study existed.
     set('uTime', t)
     set('uMode', shader ? shader.mode : 0)
+    // Outside the if below: the Field view has no descriptor and must not
+    // keep Scatter's grade after a visit there.
+    set('uGrade', shader?.grade ?? 0)
+    // Explore's Underwater visibility; nothing else sets it.
+    const underwater = shader?.underwater ?? 0
+    set('uUnderwater', underwater)
     const streamMaterial = streams?.material
     if (streamMaterial !== streamUploaded.current) {
       streamUploaded.current = streamMaterial
@@ -945,10 +1083,17 @@ export default function Terrain({
     setWater('uElevation', elevation)
     setWater('uSedLift', elevation * SEDIMENT_LIFT)
     setWater('uClarity', mode === 0 ? 1.15 : mode === 2 ? 0.9 : mode === 3 ? 1.3 : 1)
+    setWater('uUnderwater', underwater)
+    // Scatter's cleaned palette: the water reflects the sky the scene
+    // actually has (the dome's horizon), not a paler one, so the basins —
+    // where the darks should be deepest — do not take a grey sheen.
+    if (water.uHorizon) water.uHorizon.value.copy(shader?.grade ? SKY_HORIZON : WATER_HORIZON)
 
     // The streams' water rides the same ground: sediment lift and breathing.
     const sw = streamWaterMaterial.uniforms
     sw.uSediment.value = texture
+    if (sw.uWaterY) sw.uWaterY.value = waterY
+    if (sw.uUnderwater) sw.uUnderwater.value = underwater
     sw.uTime.value = t
     sw.uSedLift.value = elevation * SEDIMENT_LIFT
     sw.uMode.value = mode

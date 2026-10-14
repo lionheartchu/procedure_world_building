@@ -12,6 +12,12 @@ respond to field values?), and vary them with world data.
 *Five colonies on the default landform. Nothing here was placed by hand, and
 nothing was placed at random either.*
 
+> **Later revision:** colony sites now gather around the first colony, and
+> the colony's light on the ground comes from the matter it gathered rather
+> than from a halo mesh. See
+> [09 · Composition and spatial light](09-composition-and-light.md). This
+> document records the study as it was.
+
 ## Question
 
 If the world is one organism, where would it grow its structures? Can that be

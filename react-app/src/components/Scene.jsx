@@ -22,6 +22,7 @@ export default function Scene({
   shader = null,
   streams = null,
   air = null,
+  accumulation = null,
   children,
 }) {
   return (
@@ -59,6 +60,7 @@ export default function Scene({
         wireframe={wireframe}
         shader={shader}
         streams={streams}
+        accumulation={accumulation}
       />
       {children}
 

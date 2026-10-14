@@ -9,7 +9,9 @@
  *     world data (worldData.js)
  *       -> site potential: dry ground near water, gentle, with a record, in
  *          the colony field
- *       -> a few colony sites: its strongest peaks, kept far apart
+ *       -> colony sites that gather: the strongest place first, then sites
+ *          drawn toward established colonies (offshoots, younger and
+ *          smaller), with now and then a separate group
  *       -> per colony, in order:
  *            one anchor membrane at the site
  *            smaller veils on suitable ground nearby, smaller further out
@@ -268,10 +270,32 @@ class Claims {
 const COLONY = {
   /** At most this many colonies; fewer if the world offers fewer sites. */
   max: 5,
-  /** Distance between colony centres, world units: the empty space. */
-  separation: 6.5,
-  /** A site must reach this share of the best site's potential. */
+  /**
+   * A site must reach this share of the best site's potential: `floor` when
+   * it is drawn close to an established colony, up to `apart` when it would
+   * begin a group of its own — a new group needs a much better place than
+   * joining one does.
+   */
   floor: 0.3,
+  apart: 0.72,
+  /**
+   * Gathering. Each established colony draws the next ones toward it: its
+   * pull falls off over `reach` world units, in proportion to its own
+   * maturity. A site far from every colony keeps `independent` of its
+   * potential, so a strong place elsewhere can still start its own group.
+   */
+  reach: 5.5,
+  independent: 0.3,
+  /** Centres stay this share of the two colonies' radii apart: tissue may
+   *  meet and overlap at the edges, anchors never crowd. */
+  spacing: 0.85,
+  /**
+   * Age. A colony drawn up close to an older one is its offshoot: younger
+   * and smaller, by up to `offshoot`. One that began a group of its own
+   * began later than the first, by `later`.
+   */
+  offshoot: 0.45,
+  later: 0.25,
   /** Grid the potential is evaluated on. */
   grid: 64,
 }
@@ -281,22 +305,33 @@ const COLONY = {
  * little wider), gentle, holding some record, inside the colony field, and
  * sheltered rather than exposed.
  */
-function sitePotential(d, params) {
+function sitePotential(d, params, withField = true) {
   const margin = smoothstep(-0.2, 0.4, d.shore) * (1 - smoothstep(3, 5, d.shore))
   const gentle = 1 - smoothstep(12, 22, d.slope)
   const record = 0.3 + 0.7 * smoothstep(0.1, 0.7, d.trace)
-  const field = smoothstep(params.quiet - 0.1, params.quiet + 0.3, d.colony)
+  const field = withField ? smoothstep(params.quiet - 0.1, params.quiet + 0.3, d.colony) : 1
   const shelter = 0.75 + 0.25 * d.hollow
   return margin * gentle * record * field * shelter
 }
 
 /**
- * The few strongest peaks of the site potential, kept far apart. Blurred
- * first, so a colony starts at a broad strong place rather than a spike.
+ * Colonies gather. The first takes the strongest place in the site
+ * potential. Every later one is chosen by potential *and* by the pull of the
+ * colonies already there, so growth tends to begin near established growth
+ * (as matter settles where matter has settled): one strong concentration,
+ * smaller offshoots around it, and only occasionally a separate group where
+ * the world offers a much better place. Spacing follows the colonies' own
+ * sizes, so a small offshoot can sit close to its parent and large colonies
+ * keep apart. Nothing is placed by position: change the seed, the history or
+ * the landform and the same rules give a different gathering.
+ *
+ * The potential is blurred first, so a colony starts at a broad strong
+ * place rather than a spike.
  */
 export function findColonies(world, params) {
   const n = COLONY.grid
   const raw = new Float32Array(n * n)
+  const rawNear = new Float32Array(n * n)
   const d = {}
   // A colony does not take root in a stream: its site keeps clear of the
   // water veins (they are part of the world it grows in).
@@ -311,25 +346,58 @@ export function findColonies(world, params) {
       world.sample((i + 0.5) / n, (j + 0.5) / n, d)
       const x = ((i + 0.5) / n - 0.5) * world.size
       const z = ((j + 0.5) / n - 0.5) * world.size
-      raw[j * n + i] = sitePotential(d, params) * clearOfStreams(x, z)
+      const clear = clearOfStreams(x, z)
+      raw[j * n + i] = sitePotential(d, params) * clear
+      rawNear[j * n + i] = sitePotential(d, params, false) * clear
     }
   }
   const potential = blur(raw, n, 2)
-  const order = Array.from(potential.keys()).sort((a, b) => potential[b] - potential[a])
-  const best = potential[order[0]]
+  // Near an established colony the colony field no longer decides: the
+  // colony has made the ground around it habitable (its matter settles
+  // there), so only the ground's own conditions count.
+  const potentialNear = blur(rawNear, n, 2)
+  let best = 0
+  for (let k = 0; k < potential.length; k++) best = Math.max(best, potential[k])
   if (!(best > 0.01)) return []
 
   const cell = world.size / n
-  const sites = []
-  for (const k of order) {
-    if (sites.length >= COLONY.max || potential[k] < best * COLONY.floor) break
-    const x = ((k % n) + 0.5) * cell - world.size / 2
-    const z = (Math.floor(k / n) + 0.5) * cell - world.size / 2
-    if (!inBounds(world, x, z, 2)) continue
-    if (sites.some((s) => Math.hypot(s.x - x, s.z - z) < COLONY.separation)) continue
-    sites.push({ x, z, strength: potential[k] / best })
+  const colonies = []
+  const pull = (x, z) => {
+    let p = 0
+    for (const c of colonies) p = Math.max(p, c.maturity * Math.exp(-((Math.hypot(c.x - x, c.z - z) / COLONY.reach) ** 2)))
+    return p
   }
-  return sites.map((site, index) => describeColony(world, site, index))
+  const tooClose = (x, z, r) => colonies.some((c) => Math.hypot(c.x - x, c.z - z) < COLONY.spacing * (c.radius + r))
+  const rejected = new Set()
+  while (colonies.length < COLONY.max) {
+    let pick = null
+    for (let k = 0; k < potential.length; k++) {
+      if (rejected.has(k) || potentialNear[k] < best * COLONY.floor) continue
+      const x = ((k % n) + 0.5) * cell - world.size / 2
+      const z = (Math.floor(k / n) + 0.5) * cell - world.size / 2
+      if (!inBounds(world, x, z, 2)) continue
+      const near = pull(x, z)
+      const settled = Math.min(1, near / 0.6)
+      const here = Math.max(potential[k], potentialNear[k] * settled * 0.9)
+      if (here < best * COLONY.floor) continue
+      if (colonies.length && here < best * lerp(COLONY.apart, COLONY.floor, settled)) continue
+      const score = here * (COLONY.independent + (1 - COLONY.independent) * near) * (colonies.length ? 1 : 1 / COLONY.independent)
+      if (pick && score <= pick.score) continue
+      // A newcomer is at most mid-sized, so it may stand closer than two
+      // full colonies would.
+      if (tooClose(x, z, 2.2)) continue
+      pick = { k, x, z, score, strength: Math.min(1, here / best), near }
+    }
+    if (!pick) break
+    // Settling onto dry ground can move a site inland: check where it ends.
+    const colony = describeColony(world, pick, colonies.length, colonies[0])
+    if (tooClose(colony.x, colony.z, colony.radius)) {
+      rejected.add(pick.k)
+      continue
+    }
+    colonies.push(colony)
+  }
+  return colonies
 }
 
 /**
@@ -337,7 +405,7 @@ export function findColonies(world, params) {
  * record around the site, so a longer History makes colonies *older* — larger
  * anchors, more members, more residue — rather than just more numerous.
  */
-function describeColony(world, site, index) {
+function describeColony(world, site, index, first) {
   const d = {}
   const e = 0.8
   // Toward the water: down the shore-distance gradient.
@@ -367,7 +435,14 @@ function describeColony(world, site, index) {
     trace += sampleAt(world, x + Math.cos(a) * 1.4, z + Math.sin(a) * 1.4, d).trace
   }
   const record = smoothstep(0.1, 0.7, trace / 12)
-  const maturity = clamp01((0.3 + 0.7 * record) * (0.55 + 0.45 * Math.sqrt(site.strength)))
+  let maturity = clamp01((0.3 + 0.7 * record) * (0.55 + 0.45 * Math.sqrt(site.strength)))
+  // An offshoot drawn up close to an older colony is younger than it; one
+  // that began on its own keeps its own age. None outgrows the first.
+  if (first) {
+    const near = Math.min(1, (site.near ?? 0) / Math.max(0.3, first.maturity))
+    maturity *= 1 - COLONY.offshoot * near - COLONY.later * (1 - near)
+    maturity = Math.min(maturity, first.maturity * 0.92)
+  }
 
   return {
     index,
@@ -376,7 +451,7 @@ function describeColony(world, site, index) {
     y: groundAt(world, x, z),
     dir: [dx, dz],
     maturity,
-    radius: lerp(1.7, 3, maturity),
+    radius: lerp(1.3, 3, maturity),
     // The most established colonies begin first.
     birth: (1 - maturity) * 0.12,
   }
@@ -484,9 +559,10 @@ function growColony(world, params, colony, claims, out, random) {
   for (const f of [-0.4, 0, 0.4]) claims.add(cx - Dz * width * f, cz + Dx * width * f, 0.35 * H)
   bases.push({ x: cx, z: cz, r: 0.2 + 0.12 * H, weight: 1 })
 
-  // 2. Smaller veils on suitable ground nearby.
+  // 2. Smaller veils on suitable ground nearby. The first colony, the one
+  // the others gathered around, has grown the fullest body.
   const bloomLayer = LAYER_BY_ID.bloom
-  const want = Math.round(lerp(0.5, 5, params.bloomAmount) * (0.35 + 0.65 * M))
+  const want = Math.round(lerp(0.5, 5, params.bloomAmount) * (0.35 + 0.65 * M) * (colony.index === 0 ? 1.5 : 1))
   const candidates = []
   for (let k = 0; k < 80; k++) {
     const [x, z, r] = inDisc(random, cx, cz, 0.35 * H + 0.5, R)

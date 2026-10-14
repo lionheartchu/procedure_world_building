@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { buildScatterGeometry, buildStreamDebug } from '../lib/traceForms'
-import { createFormMaterial } from '../lib/formMaterial'
+import { createFormMaterial, setAccumulation } from '../lib/formMaterial'
+import { buildBranchingGeometry, growBranching } from '../lib/branching'
+import BranchNetwork from './BranchNetwork'
 
 /** Seconds a full Grow takes. Everything moves; nothing moves fast. */
 const GROW_SECONDS = 42
@@ -14,9 +16,10 @@ const GROW_REPORT = 0.25
  * three languages lives here, in four kinds of material rather than one:
  * membrane the softest and most luminous, in a cooler blue-white; structure
  * darker, fibrous and taut, with one crisp highlight; residue matte, grainy
- * and settled. Under all of them the colony's tissue and its light on the
- * ground, which belong to the colony rather than to a language and are
- * shown in every view.
+ * and settled. Under all of them the colony's tissue, which belongs to the
+ * colony rather than to a language and is shown in every view. Light on the
+ * ground is not a mesh: the ground, the tissue and the forms all read the
+ * light held in what the colonies gathered (lib/accumulation.js).
  */
 const MESHES = [
   { layer: 'tissue', part: 'skin', kind: 'tissue', renderOrder: -2, tint: '#BDB6DF' },
@@ -27,15 +30,12 @@ const MESHES = [
   { layer: 'shard', part: 'glass', kind: 'sediment', tint: '#C4BEE2', gain: 0.6, body: 1.3 },
   { layer: 'shard', part: 'solid', kind: 'sediment', tint: '#C4BEE2', gain: 0.6, body: 1.3 },
   { layer: 'bead', part: 'solid', kind: 'solid' },
-  // The ground's response under each colony, drawn before the water so the
-  // water veils it where the colony meets the shallows.
-  { layer: 'halo', part: 'glow', kind: 'halo', renderOrder: -3, tint: '#B4ADD8' },
   // Internal debug only (?debug=streams): the water veins' splines.
   { layer: 'spline', part: 'spline', kind: 'halo', renderOrder: 4, tint: '#E4E0FA' },
 ]
 
-/** Shown in every colony view: they belong to the colony, not one language. */
-const SHARED = new Set(['tissue', 'halo'])
+/** Shown in every colony view: it belongs to the colony, not one language. */
+const SHARED = new Set(['tissue'])
 
 /** Trace Beads are an accent: fixed glow, never soloed. */
 const BEAD_GLOW = 0.5
@@ -49,10 +49,22 @@ function shows(layer, view) {
   return view === 'all' || view === layer || SHARED.has(layer)
 }
 
-export default function ScatterLayers({ world, scatter, streams, params, growing, onGrowth, onGrowthEnd }) {
+export default function ScatterLayers({ world, scatter, accumulation, streams, params, growing, onGrowth, onGrowthEnd }) {
   const materials = useMemo(() => MESHES.map((m) => createFormMaterial(m)), [])
 
   const geometry = useMemo(() => buildScatterGeometry(scatter, world), [scatter, world])
+  // The branching network grows from what the colony placed (and from the
+  // membrane surfaces the geometry just built). Structure, so Bridgework's
+  // Amount sets how much grows; Accumulation how far it runs down the
+  // record; History ages the colony, which adds orders of branching.
+  const { seed, bridgeAmount, shardAccumulation } = params
+  // (`geometry` is a dependency for its membrane surfaces: the climbing veins
+  // grow on them.)
+  const networks = useMemo(
+    () => buildBranchingGeometry(growBranching(scatter, world, { seed, amount: bridgeAmount, accumulation: shardAccumulation }), world),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scatter, world, geometry, seed, bridgeAmount, shardAccumulation],
+  )
   const debugGeometry = useMemo(
     () => (DEBUG_STREAMS ? buildStreamDebug(streams?.lines, world) : { spline: null }),
     [streams, world],
@@ -75,6 +87,7 @@ export default function ScatterLayers({ world, scatter, streams, params, growing
   // restart from zero on its very first frame, and end exactly once even if
   // the parent has not re-rendered yet.
   const growth = useRef(params.growth)
+  const waterLine = useRef(world.waterY)
   const reported = useRef(0)
   const wasGrowing = useRef(false)
   const ended = useRef(false)
@@ -109,6 +122,14 @@ export default function ScatterLayers({ world, scatter, streams, params, growing
     // The same ~50 s tide as the terrain's water, so the waterline on the
     // forms rises and falls with the surface.
     const waterY = world.waterY + Math.sin(t * 0.125) * world.elevation * 0.012
+    waterLine.current = waterY
+
+    // The light held in the gathered matter comes up as the colony grows
+    // (the ground reads the same value).
+    if (accumulation) {
+      const g = Math.min(1, Math.max(0, (growth.current - 0.15) / 0.7))
+      accumulation.rise.value = g * g * (3 - 2 * g)
+    }
 
     MESHES.forEach((m, k) => {
       const u = materials[k].uniforms
@@ -117,11 +138,13 @@ export default function ScatterLayers({ world, scatter, streams, params, growing
       if (u.uWaterY) u.uWaterY.value = waterY
       if (u.uGlow) u.uGlow.value = m.layer === 'bead' ? BEAD_GLOW : 0.6
       if (u.uOpenness) u.uOpenness.value = m.layer === 'bloom' ? params.bloomOpenness * 1.6 : m.layer === 'bridgework' ? 0.8 : 0
+      setAccumulation(u, accumulation)
     })
   })
 
   return (
     <group>
+      <BranchNetwork networks={networks} growth={growth} waterY={waterLine} visible={params.view === 'all' || params.view === 'bridgework'} />
       {MESHES.map((m, k) => {
         const geo = (m.layer === 'spline' ? debugGeometry : geometry[m.layer])?.[m.part]
         if (!geo) return null
