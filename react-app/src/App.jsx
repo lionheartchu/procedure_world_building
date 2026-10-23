@@ -25,6 +25,8 @@ import { placeScatter } from './lib/scatter'
 import { buildAccumulation } from './lib/accumulation'
 import { createAccumulationTexture } from './lib/formMaterial'
 import { captureState, restoreState } from './lib/savedState'
+import { navigate } from './lib/route'
+import QuietNav from './components/QuietNav'
 import { buildStreamWater, carveStreams, streamLines, streamMaterial, traceStreams } from './lib/streams'
 import './App.css'
 
@@ -183,7 +185,7 @@ function App() {
   // Explore is the world as one place, and where the app opens; the studies
   // it grew from are one menu away, each unchanged.
   const [view, setView] = useState('explore')
-  const [studiesOpen, setStudiesOpen] = useState(false)
+  const [studiesOpen, setStudiesOpen] = useState(() => window.history.state?.studies === true)
   const [volumeParams, setVolumeParams] = useState(DEFAULT_VOLUME)
   const [volumeStats, setVolumeStats] = useState(null)
   const [shaderParams, setShaderParams] = useState(DEFAULT_SHADER)
@@ -536,6 +538,11 @@ function App() {
     else if (view !== was.view && was.view === 'shaders') setRunning(false)
   }, [view, dormant])
 
+  const openAtlas = (event) => {
+    event.preventDefault()
+    navigate('/atlas')
+  }
+
   // W toggles wireframe on the terrain.
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -595,13 +602,22 @@ function App() {
       )}
 
       <header className="app-header">
-        <h1 className="brand">Residual Ecology</h1>
-        <ViewTabs
-          value={view}
-          onChange={handleViewChange}
-          studiesOpen={studiesOpen}
-          onToggleStudies={() => setStudiesOpen((open) => !open)}
-        />
+        {/* Quiet over Explore's world; always shown in the studies, where the tabs are tools. */}
+        <QuietNav always={!exploring || studiesOpen} label="Residual Ecology: menu">
+          {/* The title, like the Atlas tab, opens the Atlas. */}
+          <h1 className="brand">
+            <a className="brand-link" href="/atlas" onClick={openAtlas}>
+              Residual Ecology
+            </a>
+          </h1>
+          <ViewTabs
+            value={view}
+            onChange={handleViewChange}
+            studiesOpen={studiesOpen}
+            onToggleStudies={() => setStudiesOpen((open) => !open)}
+            onAtlas={openAtlas}
+          />
+        </QuietNav>
       </header>
 
       {/* Secondary: the Library appears with the studies, not in Explore's

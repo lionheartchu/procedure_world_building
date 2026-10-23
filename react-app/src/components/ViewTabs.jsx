@@ -8,10 +8,11 @@ const STUDIES = [
 
 /**
  * Quiet text tabs under the title. Explore is the world as one place; the
- * studies it grew from sit behind a secondary Studies menu, each still its
- * own view with its own panel.
+ * Atlas is its archive, on pages of its own; the studies it grew from sit
+ * behind a secondary Studies menu, each still its own view with its own
+ * panel.
  */
-export default function ViewTabs({ value, onChange, studiesOpen, onToggleStudies }) {
+export default function ViewTabs({ value, onChange, studiesOpen, onToggleStudies, onAtlas }) {
   const inStudy = value !== 'explore'
   return (
     <nav className="view-tabs" aria-label="View">
@@ -23,6 +24,9 @@ export default function ViewTabs({ value, onChange, studiesOpen, onToggleStudies
       >
         Explore
       </button>
+      <a className="view-tab" href="/atlas" onClick={onAtlas}>
+        Atlas
+      </a>
       <button
         type="button"
         className={`view-tab view-tab-menu${inStudy ? ' is-current' : ''}${studiesOpen ? ' is-open' : ''}`}
