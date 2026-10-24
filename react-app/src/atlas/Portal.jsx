@@ -3,35 +3,44 @@ import { PORTAL } from './assets'
 import { CHAPTERS } from './content'
 import { reducedMotion } from './navigation'
 import { AtlasHeader, Link } from './parts'
+import PortalAir from './PortalAir'
+import './portal.css'
 
 /**
- * The chapters as five specimens suspended in an open field: one conceptual
- * illustration each (PORTAL in assets.js), shown as supplied, with its
- * number, title and one line. Three above, two below, on a loose grid so
- * nothing overlaps at any width; each floats very slowly and drifts with
- * the pointer at its own depth. The whole of each item opens its chapter.
+ * The chapters as five specimens in one quiet atmosphere (PORTAL in
+ * assets.js: conceptual illustrations, shown as supplied). One composed
+ * stage, not a grid: Life Cycles stands at the centre on a pale, barely
+ * reflective plane; World and Matter Exchange float on either side, a
+ * little further back; Field Notes and Fragments rest lower, nearer, on the
+ * plane. Each keeps its own number and name; its one line shows on hover or
+ * focus. Residue carried by moving air drifts through the lower space,
+ * behind them (PortalAir: the World's wisps, in miniature). The stage keeps
+ * its proportions and scales to the window, so the composition holds at
+ * every desktop size; on narrow screens it becomes a simple column.
  */
 
 /**
- * Where each sits in the field's 12 columns, how far it is lowered (rem),
- * how wide its image is within its columns, its depth for the drift,
- * whether its label sits beside it, and whether it sits centred in its
- * columns (so the gaps either side of it match).
+ * Each specimen's place on the stage (percent of the stage's width and
+ * height: left, top, width), where its label sits (beside it, or for Life
+ * Cycles inside the empty upper left of its own image, against the stem, so
+ * it reads as the sail's and not World's), whether it
+ * rests on the plane (a soft contact shadow and a faint reflection), and
+ * its depth for the pointer drift.
  */
 const PLACE = {
-  world: { col: '1 / span 4', row: 1, drop: 2.6, width: 0.94, depth: 1 },
-  'life-cycles': { col: '5 / span 4', row: 1, drop: 0, width: 0.62, depth: 0.6, centred: true },
-  'matter-exchange': { col: '9 / span 4', row: 1, drop: 3.4, width: 0.94, depth: 1.3 },
-  'field-notes': { col: '2 / span 5', row: 2, drop: 0.4, width: 0.5, depth: 0.8, side: true },
-  fragments: { col: '8 / span 5', row: 2, drop: 1.6, width: 0.52, depth: 1.1, side: true },
+  world: { x: 5.5, y: 6, w: 23, label: 'below', depth: 0.7 },
+  'life-cycles': { x: 38, y: 9.5, w: 24, label: 'inside', ground: true, depth: 0.45 },
+  'matter-exchange': { x: 72, y: 25, w: 21, label: 'above', depth: 0.8 },
+  'field-notes': { x: 15, y: 63.5, w: 12.5, label: 'right', ground: true, depth: 1.1 },
+  fragments: { x: 63.5, y: 68.5, w: 13, label: 'right', ground: true, depth: 1.2 },
 }
 
 export default function Portal() {
-  const field = useRef(null)
+  const stage = useRef(null)
 
-  // Drift: the pointer's place in the field, from −1 to 1, as two CSS variables.
+  // Drift: the pointer's place over the stage, from −1 to 1, as two CSS variables.
   useEffect(() => {
-    const el = field.current
+    const el = stage.current
     if (!el || reducedMotion()) return undefined
     let frame = 0
     const onMove = (event) => {
@@ -53,6 +62,13 @@ export default function Portal() {
 
   return (
     <main className="atlas-page atlas-portal">
+      {/* The shared atmosphere: broad, slow mist over a lavender-to-pearl ground. */}
+      <div className="portal-air" aria-hidden="true">
+        <span className="portal-mist mist-1" />
+        <span className="portal-mist mist-2" />
+        <span className="portal-mist mist-3" />
+      </div>
+
       <AtlasHeader
         right={
           <Link to="/atlas" className="atlas-quiet">
@@ -63,46 +79,59 @@ export default function Portal() {
       <header className="portal-intro">
         <h1 className="portal-heading">Five chapters</h1>
         <p className="portal-lede">The ground, what lives on it, what passes between, how it was studied, and what it was imagined through.</p>
-        <p className="portal-provenance">Conceptual illustrations for the chapters: not screenshots of the app, and not evidence from its simulation.</p>
       </header>
 
-      <nav className="portal-field" ref={field} aria-label="Chapters">
-        {CHAPTERS.map((c, k) => {
-          const p = PLACE[c.id]
-          const art = PORTAL[c.id]
-          return (
-            <Link
-              key={c.id}
-              to={`/atlas/${c.id}`}
-              className={`portal-specimen specimen-for-${c.id}${p.side ? ' is-side' : ''}${p.centred ? ' is-centred' : ''}`}
-              style={{ gridColumn: p.col, gridRow: p.row, '--drop': `${p.drop}rem`, '--w': p.width, '--depth': p.depth, '--phase': `${-k * 2.3}s` }}
-            >
-              <span className="specimen-body" style={{ viewTransitionName: `atlas-hero-${c.id}` }}>
-                <img
-                  className="specimen-art"
-                  src={art.src}
-                  alt={art.alt}
-                  width={art.size[0]}
-                  height={art.size[1]}
-                  decoding="async"
-                  draggable="false"
-                />
-              </span>
-              <span className="portal-label">
-                <span className="portal-number">{c.number}</span>
-                <span className="portal-title">
-                  {c.title}
-                  <span className="portal-cue" aria-hidden="true">
-                    →
-                  </span>
-                </span>
-                <span className="portal-text">{c.teaser}</span>
-              </span>
-            </Link>
-          )
-        })}
-      </nav>
+      <div className="portal-stage-wrap">
+        <nav className="portal-stage" ref={stage} aria-label="Chapters">
+          {/* Light held around the centre, and the pale plane the nearer specimens rest on. */}
+          <span className="portal-light" aria-hidden="true" />
+          <span className="portal-plane" aria-hidden="true" />
+          <PortalAir />
 
+          {CHAPTERS.map((c, k) => {
+            const p = PLACE[c.id]
+            const art = PORTAL[c.id]
+            return (
+              <Link
+                key={c.id}
+                to={`/atlas/${c.id}`}
+                className={`portal-specimen specimen-for-${c.id} label-${p.label}${p.ground ? ' is-grounded' : ''}`}
+                style={{ left: `${p.x}%`, top: `${p.y}%`, width: `${p.w}%`, '--depth': p.depth, '--phase': `${-k * 3.1}s` }}
+              >
+                {p.ground && (
+                  <>
+                    <span className="specimen-contact" aria-hidden="true" />
+                    <img className="specimen-reflection" src={art.src} alt="" aria-hidden="true" decoding="async" draggable="false" />
+                  </>
+                )}
+                <span className="specimen-body" style={{ viewTransitionName: `atlas-hero-${c.id}` }}>
+                  <img
+                    className="specimen-art"
+                    src={art.src}
+                    alt={art.alt}
+                    width={art.size[0]}
+                    height={art.size[1]}
+                    decoding="async"
+                    draggable="false"
+                  />
+                </span>
+                <span className="portal-label">
+                  <span className="portal-number">{c.number}</span>
+                  <span className="portal-title">
+                    {c.title}
+                    <span className="portal-cue" aria-hidden="true">
+                      →
+                    </span>
+                  </span>
+                  <span className="portal-text">{c.teaser}</span>
+                </span>
+              </Link>
+            )
+          })}
+        </nav>
+      </div>
+
+      <p className="portal-provenance">Conceptual illustrations, not screenshots or simulation output.</p>
     </main>
   )
 }

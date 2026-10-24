@@ -159,8 +159,9 @@ The full picture is in the
 [project status report](docs/project-status-2026-10.md), and open work is in
 the [backlog](backlog.md).
 
-The site at **residual-ecology.web.app** currently serves an earlier build
-(the Field and Volume views only); the current version runs locally.
+The site at **residual-ecology.web.app** serves Explore and the studies as
+of 14 October, and the Atlas at `/atlas`. The lifecycle experiments run
+locally only.
 
 ## Studies
 

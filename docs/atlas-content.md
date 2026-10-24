@@ -40,10 +40,10 @@ What Atlas may say is implemented, and how:
 | **Colonies:** three languages, gathering, held light | Explore | implemented. Placed once from the record; Growth replays when forms appear, never where |
 | **The air:** dust, wisps, haze, fragments | Explore | implemented. The one system that changes continuously; it writes nothing back |
 | **Branching tissue** | one colony | a checkpoint, close range only |
-| **Residents' lifecycle:** release, residue, new growth | `?lifecycle=1`, one patch of one colony | a development demo, under review |
-| **Shared tissue between colonies** | `&conduit=1` | a development experiment, under review |
+| **Residents' lifecycle:** release, residue, new growth | `?lifecycle=1`, one patch of one colony | a development demo, bounded |
+| **Shared tissue between colonies** | `&conduit=1` | a development experiment, unfinished and paused |
 | **Warm accent, uptake cues** | `&warm=…` | an A/B study |
-| **The conduit's 3D form** (fold, greybox) | `&fold=1`, `&greybox=…` | display studies of one stretch; not a final form |
+| **The conduit's 3D form** (fold, greybox) | `&fold=1`, `&greybox=…` | display studies of one stretch, paused; not a final form |
 | **Emergent core, feedback to residents, persistence across sessions** | — | **proposed only**, in the design documents and design boards |
 
 ## Asset classes
@@ -405,3 +405,38 @@ are no longer imported or bundled. They were left in place, not deleted.
   build of `c923a84`.
 - **Build and lint:** the build passes; lint gives 0 errors and no new
   warnings.
+
+## Portal checkpoint, 24 October 2026 (paused)
+
+The portal as it stands is kept as a working checkpoint. Design work is
+paused.
+
+**What it has:**
+- **Layout:** the five illustrations composed on one stage, with Life
+  Cycles at the centre.
+- **Atmosphere:**
+  - a lavender-to-pearl ground with slow mist;
+  - a faint reflective plane that the nearer specimens rest on;
+  - **residue carried by moving air** (`PortalAir.jsx`), a small 2D echo of
+    the World's wisps (study 07, phase 2.5) on its own canvas, importing
+    none of the World's code.
+- **Text:** at rest, numbers and names only; the one line appears on hover
+  or focus.
+
+It was refined in the release worktree (`pwb_hw0-atlas-release`, on
+`53bb1c5`) and copied into this workspace on 24 October, where it is
+committed locally (not pushed or deployed):
+- `Portal.jsx`, `portal.css` and `PortalAir.jsx`;
+- `atlas.css`, with its old portal rules removed.
+
+**Deferred: polish for later, not problems to fix now**
+- The atmosphere still feels slightly sparse in places.
+- The residue in the air is subtle; it is hard to notice without watching
+  it move.
+- At close inspection, some traces look slightly brushed.
+- Activity is intermittent, so some moments are nearly still.
+- Field Notes and Fragments are quieter and smaller than the other three.
+- The portal could tie more closely to the World, without scenery or heavy
+  rendering.
+- On phones the atmospheric layer (plane, reflections, residue) is left
+  out.
