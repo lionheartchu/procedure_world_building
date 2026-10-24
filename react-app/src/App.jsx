@@ -26,6 +26,8 @@ import { buildAccumulation } from './lib/accumulation'
 import { createAccumulationTexture } from './lib/formMaterial'
 import { captureState, restoreState } from './lib/savedState'
 import { navigate } from './lib/route'
+import { Lifecycle } from './lib/lifecycle'
+import LifecycleInspector from './components/LifecycleInspector'
 import QuietNav from './components/QuietNav'
 import { buildStreamWater, carveStreams, streamLines, streamMaterial, traceStreams } from './lib/streams'
 import './App.css'
@@ -172,6 +174,38 @@ const SCATTER_GROUND = {
   grade: 1,
 }
 
+/**
+ * Study 10, the lifecycle experiment: off unless the URL asks for it
+ * (`?lifecycle=1`; `&feedback=0` keeps the record from changing, for the
+ * counterfactual; `&lifespeed=8` runs it faster for inspection; `&warm=1|2|3`
+ * tries a variant of the warm accent on its exchanges, `&warm=a|b` one of the
+ * uptake study's two approaches; `&conduit=1` joins the colony to another by
+ * a shared tissue, and then shows uptake as approach b unless `&warm` says
+ * otherwise; with it, `&fold=1` draws one stretch of that tissue as a fold
+ * of the ground, the fold study, and `&greybox=1|shaded` the same stretch as
+ * a body of tissue in plain grey, the greybox study). Not state, not saved,
+ * no control in the panel. Explore only. Stages 0–2 are a bounded demo; the
+ * shared tissue and its two display studies are unfinished and paused.
+ */
+const LIFE = (() => {
+  if (typeof window === 'undefined') return null
+  const q = new URLSearchParams(window.location.search)
+  if (q.get('lifecycle') !== '1') return null
+  const conduit = q.get('conduit') === '1'
+  const warm = q.get('warm')
+  return {
+    feedback: q.get('feedback') !== '0',
+    speed: Math.max(0, Number(q.get('lifespeed') ?? 1)) || 1,
+    conduit,
+    fold: conduit && q.get('fold') === '1',
+    greybox: (conduit && q.get('greybox')) || undefined,
+    // The fold's height, to compare (units; 0.2 when not given).
+    foldLift: Number(q.get('foldlift')) || undefined,
+    // 1–3 the first variants; 4 (or a) and 5 (or b) the uptake study's approaches.
+    warm: { a: 4, b: 5 }[warm] ?? ([0, 1, 2, 3, 4, 5].includes(Number(warm ?? NaN)) ? Number(warm) : conduit ? 5 : 0),
+  }
+})()
+
 /** Explore's staged changes, per state group (see handleExploreChange). */
 const NO_DRAFT = { params: {}, simParams: {}, scatterParams: {} }
 const hasDraft = (draft) => Object.values(draft).some((group) => Object.keys(group).length > 0)
@@ -185,6 +219,7 @@ function App() {
   // Explore is the world as one place, and where the app opens; the studies
   // it grew from are one menu away, each unchanged.
   const [view, setView] = useState('explore')
+  // Open on the studies when the Atlas sent us here for them.
   const [studiesOpen, setStudiesOpen] = useState(() => window.history.state?.studies === true)
   const [volumeParams, setVolumeParams] = useState(DEFAULT_VOLUME)
   const [volumeStats, setVolumeStats] = useState(null)
@@ -439,6 +474,43 @@ function App() {
     [airDensity, airDrift, airCurl, airWisps, airWispStrength, airColony, colonies, blooms, airHaze],
   )
 
+  // Study 10 (?lifecycle=1 only): residents of the first colony live out of
+  // step on their own clock; what they release settles into a live residual
+  // over History's record, and new residents form from it and take it up.
+  // Begun again whenever the world, the record or the colonies are rebuilt.
+  // It reads the air's current settings (a ref) as it steps.
+  const airNow = useRef({ drift: airDrift, curl: airCurl, colony: airColony })
+  useEffect(() => {
+    airNow.current = { drift: airDrift, curl: airCurl, colony: airColony }
+  }, [airDrift, airCurl, airColony])
+  // A development reset begins it again from the same start.
+  const [lifeEpoch, setLifeEpoch] = useState(0)
+  const lifecycle = useMemo(() => {
+    if (!(LIFE && exploring && world && scatter && history)) return null
+    const life = new Lifecycle({
+      world,
+      scatter,
+      history,
+      field,
+      streams: streamLook.lines,
+      simParams,
+      air: airNow,
+      feedback: LIFE.feedback,
+      seed: scatterSeed,
+      conduit: LIFE.conduit,
+      fold: LIFE.fold || !!LIFE.greybox,
+    })
+    life.setSpeed(LIFE.speed)
+    life.setWarm(LIFE.warm)
+    life.foldLift = LIFE.foldLift
+    life.greybox = LIFE.greybox
+    life.epoch = lifeEpoch
+    return life
+  }, [exploring, world, scatter, history, field, streamLook, simParams, scatterSeed, lifeEpoch])
+  useEffect(() => {
+    if (LIFE) window.__lifecycle = lifecycle
+  }, [lifecycle])
+
   // Explore stands on Scatter's ground, plus its one presentation control
   // for the water. The studies never see it.
   const { underwater } = scatterParams
@@ -596,10 +668,13 @@ function App() {
               growing={growing}
               onGrowth={handleGrowth}
               onGrowthEnd={handleGrowthEnd}
+              lifecycle={lifecycle}
             />
           )}
         </Scene>
       )}
+
+      {LIFE && exploring && <LifecycleInspector lifecycle={lifecycle} onReset={() => setLifeEpoch((e) => e + 1)} />}
 
       <header className="app-header">
         {/* Quiet over Explore's world; always shown in the studies, where the tabs are tools. */}

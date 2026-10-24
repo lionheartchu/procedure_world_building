@@ -194,6 +194,11 @@ function fits(layer, d, params) {
   return layer.prefer ? s * layer.prefer(d, params) : s
 }
 
+/** The membrane rules alone at one point (lib/lifecycle.js reads them). */
+export function bloomFits(d, params) {
+  return fits(LAYER_BY_ID.bloom, d, params)
+}
+
 /** A layer's rules times the colony field: what the suitability map shows. */
 export function suitability(layer, d, params) {
   return colonyGate(d, params, layer.colony) * fits(layer, d, params)

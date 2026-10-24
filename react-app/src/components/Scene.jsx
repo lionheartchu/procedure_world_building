@@ -65,6 +65,7 @@ export default function Scene({
       {children}
 
       <OrbitControls
+        makeDefault
         enableDamping
         dampingFactor={0.05}
         rotateSpeed={0.45}

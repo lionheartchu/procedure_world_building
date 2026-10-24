@@ -57,7 +57,21 @@ Each step reads the one before it, and the chain runs one way:
   replays how the forms appear; it does not grow new ones.
 
 A world that keeps writing its own history, with life feeding back into the
-record, is a direction ahead rather than the current state.
+record, is a direction ahead rather than the current state. A bounded demo
+exists behind a development flag
+([study 10](docs/10-lifecycle-concept.md#stages-02-demo-17-october-2026)):
+- **Residents change at different times.** In one small patch, they lie
+  down and release films that the air carries.
+- **Where the films settle, a visible residue stays**, beside the
+  resident's faint contour.
+- **A new resident forms** there and takes that matter up, or the patch
+  waits.
+
+It is one patch of one colony, off by default, and bounded: the patch winds
+down after about 500 s. A shared tissue between colonies, with its fold
+and greybox studies, is an unfinished experiment, paused. Feedback to
+residents, an emergent core and a history kept between sessions are
+proposed, not implemented.
 
 ![Before and after the composition and light pass: on the right, colonies gather around a first, fuller colony and light is held in the ground around them](docs/images/09-overview.png)
 
@@ -153,6 +167,8 @@ Ongoing. **Working:**
 - **The world's edge.** It is a visible square slab. The direction is an
   organically gathered landform whose edges pass into the atmosphere.
 - **Branching.** It is an exploratory close-range study on one colony.
+- **The lifecycle (study 10).** A flagged demo on one patch of one colony,
+  not part of Explore as you see it.
 - **Rebuilding.** It runs on the main thread.
 
 The full picture is in the
@@ -176,6 +192,7 @@ locally only.
 | 07 | [Air](docs/07-air-study.md) | A particle ecology built in reviewed layers | Checkpoint |
 | 08 | [Branching](docs/08-branching-study.md) | Residual matter becoming tissue: an L-system on the ground and the membranes | Checkpoint, one colony |
 | 09 | [Composition and light](docs/09-composition-and-light.md) | Gathering colonies, light held in matter, palette, water | Under review |
+| 10 | [Ecological continuity](docs/10-lifecycle-concept.md) | Residents of one patch change at different times; what they release settles as visible residue that a new resident takes up | Stages 0–2: a bounded demo behind a dev flag. Shared tissue: unfinished, paused |
 
 Screenshots for studies 01, 02 and 04 were never captured; each document
 says what to grab.

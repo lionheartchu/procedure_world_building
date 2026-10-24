@@ -37,6 +37,30 @@ export const ACCUMULATION_GLSL = /* glsl */ `
 const BLANK_ACCUMULATION = new THREE.DataTexture(new Uint8Array([0, 0, 128, 255]), 1, 1)
 BLANK_ACCUMULATION.needsUpdate = true
 
+/**
+ * Study 10's warm accent (dev A/B, LifecycleLayer): compiled only into the
+ * lifecycle's own materials, and only while a variant is chosen (the WARM
+ * define). Matter crossing from one state to another is shifted toward a
+ * pale champagne at the brightness it already had: a change of state, not
+ * more light, and not a line of its own. Only where the surface is lit:
+ * beige on a dim surface reads as brown, so shadow keeps its violet.
+ */
+export const WARM_GLSL = /* glsl */ `
+  #ifdef WARM
+  uniform vec3 uWarmTint;
+  float warmLuma(vec3 c) {
+    return dot(c, vec3(0.299, 0.587, 0.114));
+  }
+  // How much of a cue a surface this bright can carry.
+  float warmGate(vec3 c) {
+    return smoothstep(0.1, 0.32, warmLuma(c));
+  }
+  vec3 warmed(vec3 c, float w) {
+    return mix(c, uWarmTint * (warmLuma(c) / warmLuma(uWarmTint)), clamp(w, 0.0, 1.0));
+  }
+  #endif
+`
+
 /** Uniforms for ACCUMULATION_GLSL; `size` is the world's width. */
 export function accumulationUniforms(size = 26) {
   return {
@@ -88,6 +112,11 @@ const VERTEX = /* glsl */ `
 
   uniform float uGrowth;
   uniform float uTime;
+  // Study 10 (lifecycle, dev flag only): a resident lying down. 0 leaves
+  // every form exactly as it was.
+  uniform float uRecline;
+  uniform vec3 uBase;
+  uniform vec2 uLean;
 
   varying vec3 vWorld;
   varying vec3 vNormal;
@@ -96,6 +125,19 @@ const VERTEX = /* glsl */ `
   varying float vEdge;
   varying float vPhase;
   varying float vAbove;
+  #ifdef WARM
+  // Study 10's warm accent (approach B): how far along its own surface this
+  // point lies from its foot, as far as it has grown (the veil's uv.y is the
+  // arc length up its column).
+  varying float vAlong;
+  #endif
+  #ifdef CONDUIT_FOLD
+  // Study 10's fold (dev flag only): where on the fold this point lies (along
+  // it, across it, both in units), whether on its inner skin, and how much
+  // of the matter in the tissue there shows as specks.
+  attribute vec4 aFold;
+  varying vec4 vFold;
+  #endif
 
   #include <common>
   #include <fog_pars_vertex>
@@ -103,6 +145,23 @@ const VERTEX = /* glsl */ `
   void main() {
     float g = smoothstep(aBirth.x, aBirth.x + max(aBirth.y, 1e-3), uGrowth);
     vec3 p = aAnchor + (position - aAnchor) * g;
+    #ifdef WARM
+    vAlong = uv.y * g;
+    #endif
+    #ifdef CONDUIT_FOLD
+    vFold = aFold;
+    #endif
+    vec3 nrm = normal;
+    if (uRecline > 0.0) {
+      // It folds over toward its lean about its base: its height goes into
+      // its length, until it lies low on the ground as its own outline.
+      vec3 q = p - uBase;
+      float h = max(q.y, 0.0);
+      q.xz += uLean * h * 0.9 * uRecline;
+      q.y = mix(q.y, q.y * 0.02 + 0.01, uRecline);
+      p = uBase + q;
+      nrm = normalize(mix(normal, vec3(0.0, 1.0, 0.0), 0.8 * uRecline));
+    }
     // Height above the part's foot: how far light from the ground reaches.
     vAbove = p.y - aAnchor.y;
 
@@ -111,7 +170,7 @@ const VERTEX = /* glsl */ `
 
     vec4 world = modelMatrix * vec4(p, 1.0);
     vWorld = world.xyz;
-    vNormal = normalize(mat3(modelMatrix) * normal);
+    vNormal = normalize(mat3(modelMatrix) * nrm);
     vUv = uv;
     vLook = aLook;
     vEdge = aEdge;
@@ -283,6 +342,8 @@ const SOLID_FRAGMENT = /* glsl */ `
 const FILM_FRAGMENT = /* glsl */ `
   ${SHARED_UNIFORMS}
   uniform float uOpenness;
+  // Study 10 (lifecycle, dev flag only): an old contour fading. 1 everywhere else.
+  uniform float uFade;
   uniform float uSpecular;
   uniform float uFlow;
 
@@ -290,6 +351,24 @@ const FILM_FRAGMENT = /* glsl */ `
   #include <fog_pars_fragment>
 
   ${WORLEY}
+  ${WARM_GLSL}
+  #ifdef WARM
+  // Where matter is crossing into or out of this body (xyz), how far the
+  // cue reaches (w), how strongly now, and the little light it adds.
+  uniform vec4 uWarmAt;
+  uniform float uWarmIn;
+  uniform float uWarmGlow;
+  // Approach B: matter taken in lately at the foot (0..1), how far along the
+  // surface it has come, its light, and how much denser it makes the sheet.
+  uniform vec4 uGrow;
+  varying float vAlong;
+  #endif
+  #ifdef CONDUIT_FOLD
+  // The fold's matter: its colour, and how far it has moved along the fold.
+  uniform vec3 uFoldWarm;
+  uniform float uFoldPhase;
+  varying vec4 vFold;
+  #endif
 
   void main() {
     float open = clamp(vLook.w * uOpenness, 0.0, 1.0);
@@ -355,8 +434,45 @@ const FILM_FRAGMENT = /* glsl */ `
     float rise = acc.r * exp(-max(vAbove, 0.0) / 0.6);
     float curve = length(fwidth(n)) / max(length(fwidth(vWorld)), 1e-4);
     float fold = smoothstep(2.5, 8.0, curve) * presence;
+    #ifdef CONDUIT_FOLD
+    // The fold's lofted mesh shows this per-triangle measure as facets; its
+    // roll is lit along its lip instead (aEdge).
+    fold = 0.0;
+    #endif
     vec3 held = tone * (rise * (0.03 + 0.13 * fres) + fold * (0.02 + 0.08 * acc.r));
+    #ifdef CONDUIT_FOLD
+    // The matter carried through the fold: small champagne specks in its
+    // inner skin, as many as there is matter, moving at the matter's own
+    // speed (they stand still where it does not move).
+    // (They carry their own alpha: the inner skin itself is faint.)
+    vec2 sp = worley(vec2(vFold.x - uFoldPhase, vFold.y) * 12.0);
+    float speck = (1.0 - smoothstep(0.05, 0.11, sp.x)) * step(sp.y, vFold.w) * vFold.z * smoothstep(0.0, 0.03, vLook.z);
+    // Its own colour at a moderate brightness, so it stays champagne rather than white.
+    lit = mix(lit, uFoldWarm * 0.65, speck * 0.9);
+    emit = mix(emit, uFoldWarm * 0.2, speck * 0.9);
+    #endif
+    #ifdef WARM
+    float wd = length(vWorld - uWarmAt.xyz) / uWarmAt.w;
+    float wa = uWarmIn * exp(-wd * wd) * presence * warmGate(lit + emit);
+    lit = warmed(lit, wa);
+    emit = warmed(emit, wa) + uWarmTint * wa * uWarmGlow;
+    // B: from the foot up into the sheet along its own columns, unevenly
+    // across them, as far as the recent uptake reaches.
+    // Fuller low down, with a soft front a little brighter where it has got to.
+    float reach = uGrow.y * (0.8 + 0.25 * sin(vUv.x * 11.0 + 1.3) + 0.15 * sin(vUv.x * 27.0 + 0.4));
+    float along = vAlong / max(reach, 1e-3);
+    float front = exp(-pow((along - 0.78) / 0.2, 2.0));
+    float gb = uGrow.x * (0.75 * (1.0 - smoothstep(0.5, 1.0, along)) + 0.3 * front) * presence;
+    lit = warmed(lit, gb);
+    emit = warmed(emit, gb) + uWarmTint * gb * uGrow.z;
+    #endif
     float alpha = vLook.z * (0.45 + 0.75 * fres) + (lip * 0.2 + spec * uSpecular * 0.5) * presence + edge * uEdgeGlow * 1.3 + flow * 0.35;
+    #ifdef WARM
+    alpha += gb * uGrow.w;
+    #endif
+    #ifdef CONDUIT_FOLD
+    alpha += speck * 0.7;
+    #endif
 
     float under = smoothstep(0.0, 0.25, uWaterY - vWorld.y);
     lit *= 1.0 - under * 0.45;
@@ -367,11 +483,11 @@ const FILM_FRAGMENT = /* glsl */ `
     // light in them builds up, as in layered tissue. (Premultiplied: the
     // material blends ONE, ONE_MINUS_SRC_ALPHA.)
     vec3 layered = emit * 0.2 + held;
-    gl_FragColor = vec4(lit + emit * 0.8, clamp(alpha, 0.0, 0.92));
+    gl_FragColor = vec4(lit + emit * 0.8, clamp(alpha, 0.0, 0.92) * uFade);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
     #include <fog_fragment>
-    vec3 add = layered * smoothstep(0.0, 0.15, alpha);
+    vec3 add = layered * smoothstep(0.0, 0.15, alpha) * uFade;
     #ifdef TONE_MAPPING
       add = toneMapping(add);
     #endif
@@ -427,6 +543,10 @@ export function createFormMaterial({ kind, tint = PALETTE.paleLavender, gain = 1
         uBody: { value: body },
         uFlow: { value: flow },
         uOpenness: { value: 0 },
+        uRecline: { value: 0 },
+        uFade: { value: 1 },
+        uBase: { value: new THREE.Vector3() },
+        uLean: { value: new THREE.Vector2(1, 0) },
         uSpecular: { value: specular ?? (kind === 'glass' ? 0.45 : 0.3) },
         uTint: hexUniform(tint),
         uGain: { value: gain },
@@ -568,6 +688,12 @@ const TISSUE_VERTEX = /* glsl */ `
   varying vec3 vWorld;
   varying vec3 vNormal;
   varying vec2 vUv;
+  #ifdef WARM
+  // Study 10's warm accent: how recently matter arrived here (x) and was
+  // taken up from here (y), 1 now, 0 once it has faded.
+  attribute vec2 aWarm;
+  varying vec2 vWarm;
+  #endif
 
   #include <common>
   #include <fog_pars_vertex>
@@ -575,6 +701,9 @@ const TISSUE_VERTEX = /* glsl */ `
   void main() {
     vGrow = smoothstep(aBirth.x, aBirth.x + aBirth.y, uGrowth);
     vLook = aLook;
+    #ifdef WARM
+    vWarm = aWarm;
+    #endif
     vUv = uv;
     vNormal = normalize(mat3(modelMatrix) * normal);
     vec4 world = modelMatrix * vec4(position, 1.0);
@@ -607,6 +736,17 @@ const TISSUE_FRAGMENT = /* glsl */ `
   #include <fog_pars_fragment>
 
   ${ACCUMULATION_GLSL}
+  ${WARM_GLSL}
+  #ifdef WARM
+  // A fresh deposit's thin edge (x), its body (y), where it is being taken
+  // up (z), and the little light the cue adds (w).
+  uniform vec4 uWarm;
+  // Approach A: how strongly matter being taken up from here shows (its
+  // amount arrives as vWarm.y), its light, how much denser it makes the
+  // skin, and how far the skin's own grain breaks it up.
+  uniform vec4 uAbsorb;
+  varying vec2 vWarm;
+  #endif
 
   float hash21(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
@@ -663,12 +803,35 @@ const TISSUE_FRAGMENT = /* glsl */ `
     // The growing front glows as the tissue spreads, then settles.
     float front = smoothstep(0.0, 0.35, vGrow) * (1.0 - smoothstep(0.35, 1.0, vGrow));
     emit += uBright * front * 0.4 * presence;
+    #ifdef WARM
+    // The deposit's fold light (vein) marks where it thins out: its edge.
+    // Its body carries the cue as far as the deposit itself is there.
+    float body = smoothstep(0.2, 0.8, presence);
+    float wa = vWarm.x * (uWarm.x * clamp(vein / 0.35, 0.0, 1.0) + uWarm.y * body) + vWarm.y * uWarm.z * body;
+    wa = clamp(wa, 0.0, 1.0) * smoothstep(0.0, 0.3, presence) * warmGate(lit + emit);
+    lit = warmed(lit, wa);
+    emit = warmed(emit, wa) + uWarmTint * wa * uWarm.w;
+    // A: matter being drawn out of the skin, unevenly: a slow, broad
+    // variation (the skin's grain is too fine to see from any distance, and
+    // its mottling too fine and too regular).
+    float seep = valueNoise(vUv * 2.1 + 7.3) * 0.65 + valueNoise(vUv * 4.7 + 2.9) * 0.35;
+    float grainy = mix(1.0, 0.35 + 1.3 * smoothstep(0.3, 0.75, seep), uAbsorb.w);
+    float ab = clamp(vWarm.y * uAbsorb.x * grainy, 0.0, 1.0) * smoothstep(0.0, 0.25, presence);
+    // Where the skin is dim it shows as a little light rather than a hue,
+    // which there would turn olive.
+    float abHue = ab * mix(0.35, 1.0, warmGate(lit + emit));
+    lit = warmed(lit, abHue);
+    emit = warmed(emit, abHue) + uWarmTint * ab * uAbsorb.y;
+    #endif
 
     float under = smoothstep(0.0, 0.25, uWaterY - vWorld.y);
     lit *= 1.0 - under * 0.5;
     emit *= 1.0 - under * 0.6;
 
     float alpha = presence * (0.5 + 0.3 * (1.0 - facing)) + vein * 0.2 + crusted * 0.4;
+    #ifdef WARM
+    alpha += ab * uAbsorb.z;
+    #endif
     alpha = clamp(alpha, 0.0, 0.88) * vGrow;
 
     gl_FragColor = vec4(lit + emit, alpha);

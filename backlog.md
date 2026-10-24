@@ -78,6 +78,21 @@ The full context is in the
 
 ## UI and interaction
 
+- [ ] **The Atlas, phase 1** (`/atlas`, live since 23 October, `53bb1c5`;
+  [content and asset map](docs/atlas-content.md)). Landing, portal and five chapters, built
+  from the project's own captures, diagrams and references, each labelled.
+  - **Open:**
+    - images bundled at full size (about 40 MB);
+    - the rights to the external references before deployment;
+    - no screenshots for studies 01, 02 and 04.
+  - **Phases 2 and 3** are listed in the map, not built.
+  - **Portal: paused at a checkpoint** (24 October;
+    [deferred polish](docs/atlas-content.md#portal-checkpoint-24-october-2026-paused)):
+    - sparse in places, with intermittent air activity;
+    - subtle residue, with some brushed traces;
+    - smaller Field Notes and Fragments;
+    - no atmosphere on phones.
+
 - [ ] **Explore cannot show time passing.** History is a slider that
   recomputes a different record; Growth replays fixed forms. Consider a way
   to watch the record accumulate.
@@ -127,10 +142,77 @@ The full context is in the
   and bluer; try pearl and lilac.
 - [ ] **Air:** flakes turned by the air around them, rather than a scripted
   spin.
-- [ ] **Feedback:** colonies adding to the record, so a second generation
-  reads the first one's residue. Today the chain runs one way.
-- [ ] **Decay:** colonies that thin and collapse into residue that seeds
-  what follows.
+- [ ] **Feedback, beyond one patch** (study 10). A flagged demo (stages 0–2
+  of the [demo plan](docs/03-DEMO-EXECUTION-PLAN.md)) runs one patch of
+  colony 0:
+  - Its residents change at different times, lie down, and release films.
+  - Where the films settle, a visible residue stays.
+  - New residents form on it and take it up, leaving the old contour.
+
+  Verified by an A/B, an ablation and a matter ledger
+  ([10](docs/10-lifecycle-concept.md#stages-02-demo-17-october-2026)).
+  **Paused** (24 October): stages 0–2 are a bounded demo; everything
+  below is unfinished or proposed. Open next:
+  - **Stage 3: a shared body.** Tissue that forms below the surface from
+    many generations.
+  - **Supply.** The patch winds down after about 500 s, because nothing
+    feeds it.
+  - **The rest of the colony following the residents:** the air's
+    obstacles, the tissue, the accumulation light.
+  - **Feedback to residents** (a later candidate).
+  - **Other colonies**, only after review.
+  - **The warm accent** on exchanges (`&warm=1|2|3`, an A/B,
+    [10](docs/10-lifecycle-concept.md#warm-accent-ab-17-october-2026)):
+    keep it, and which variant (2 recommended), or drop it.
+  - **The shared tissue** (`&conduit=1`,
+    [10](docs/10-lifecycle-concept.md#shared-tissue-grown-20-october-2026)),
+    unfinished, paused:
+    - **What it does:** grows from where residents release into the ground
+      (mycelium-like); reaches colonies 1 and 2; residents rise there and
+      a second generation follows.
+    - **Next:** let growth reopen dormant paths.
+    - **Open:**
+      - readability at the default distance;
+      - colony 0 no longer regrowing locally with it.
+  - **The conduit fold** (`&fold=1` with the tissue,
+    [10](docs/10-lifecycle-concept.md#conduit-fold-20-october-2026)),
+    paused:
+    - **What it is:** one stretch, by colony 1, drawn as an asymmetric fold
+      of the ground in the membranes' film, with an inner skin and specks of
+      the matter it carries. Display only.
+    - **To decide:**
+      - its height: 0.2 reads only close or low, 0.35 better;
+      - the section and its side;
+      - whether the specks should read from further away.
+    - **Known:**
+      - partly a strip from above;
+      - whitens at grazing angles near the colony;
+      - films are not depth-sorted against it.
+    - **Superseded in review:** it still read as a line on the terrain;
+      see the greybox below.
+  - **The tissue greybox** (`&greybox=1|shaded` with the tissue,
+    [10](docs/10-lifecycle-concept.md#tissue-greybox-21-october-2026)),
+    unfinished, paused:
+    - **What it is:** geometry before material. At three knots of the same
+      stretch, each path peels up out of the ground as a membrane leaf, as
+      far as that path is used. Opaque grey.
+    - **Legibility:** 73 px tall at the normal distance (the fold: 19).
+    - **Open:**
+      - leaves rather than one body;
+      - roots lying on the terrain rather than growing out of it;
+      - a large dormant trace;
+      - then the membrane material.
+  - **The uptake study** (`&warm=a|b`,
+    [10](docs/10-lifecycle-concept.md#uptake-study-18-october-2026)), for
+    review:
+    - **The choice:** A (absorption in the ground) or B (warmth rising in
+      the new membrane). B is recommended.
+    - **Whether** to try B plus A only for the first seconds.
+    - **Not yet tried:** the contour's share of the uptake, and residents
+      other than #4.
+- [ ] **Decay of whole colonies:** thinning and collapsing into residue that
+  seeds what follows. The prototype's resident already dissolves; colonies
+  do not.
 - [ ] **A live history in Explore:** the record and the colonies developing
   over minutes rather than being recomputed.
 - [ ] **The volume study's spanning structures** as undersides or cavities
@@ -184,6 +266,29 @@ not yet approved.
   - the panel's sections, tooltips, and Underwater visibility
 - **References:** external references and AI-generated concept studies
   separated ([references](docs/references/README.md)).
+- **Lifecycle, stages 0–2 demo (study 10), 17 October 2026,** under review.
+  It replaces the prototype below in the code.
+  - **What it is:**
+    - behind `?lifecycle=1`
+    - three staggered residents of colony 0, drawn as a ground skin
+    - released matter settles as a visible residue that new residents take
+      up, with a pause/speed/reset inspector
+  - **Evidence:**
+    - With feedback on, #4 forms on #1's residue at 80 s, and a second
+      generation follows. With it off, nothing forms.
+    - Erasing only #1's residue removes #4.
+    - The ledger holds to 2 × 10⁻⁸.
+    - With the flag off: pixel-identical frames and identical fingerprints.
+- **Lifecycle prototype (study 10), 15 October 2026,** superseded by the
+  demo above.
+  - **What it is:** behind `?lifecycle=1`, off by default; one resident of
+    colony 0 develops, ages, sheds films that the air carries, and dissolves.
+    Their matter settles into a live residual kept apart from History, and
+    the next resident germinates from it.
+  - **With the flag off:** pixel-identical frames and identical generation
+    fingerprints.
+  - **With it on:** feedback off gives identical generations, and erasing
+    the record gives the same result as feedback off.
 - **Checkpoint decisions (14 October 2026):**
   - The project's name is **Residual Ecology**.
   - [`AESTHETIC_LANGUAGE.md`](AESTHETIC_LANGUAGE.md) is public, tracked and

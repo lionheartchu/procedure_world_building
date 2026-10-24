@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { airVelocity } from '../lib/air'
+import { WARM_GLSL } from '../lib/formMaterial'
 
 /*
  * Rare fragments — rework, phase 5 (second revision): residual films shed by
@@ -83,6 +84,12 @@ const VERTEX = /* glsl */ `
   varying float vSoft;
   varying float vAge;
   varying float vCrease;
+  #ifdef WARM
+  // Study 10's warm accent: a film from the lifecycle just released or just
+  // settled (LifecycleLayer). Never defined for the air's own skins.
+  attribute float aWarm;
+  varying float vWarm;
+  #endif
 
   #include <fog_pars_vertex>
 
@@ -152,6 +159,9 @@ const VERTEX = /* glsl */ `
     vSoft = aSoft;
     vAge = aAge;
     vCrease = crease;
+    #ifdef WARM
+    vWarm = aWarm;
+    #endif
 
     vec4 mvPosition = viewMatrix * world;
     gl_Position = projectionMatrix * mvPosition;
@@ -181,6 +191,11 @@ const FRAGMENT = /* glsl */ `
   #include <fog_pars_fragment>
 
   ${STATE_GLSL}
+  ${WARM_GLSL}
+  #ifdef WARM
+  uniform float uWarmGlow;
+  varying float vWarm;
+  #endif
 
   float h2(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -318,6 +333,10 @@ const FRAGMENT = /* glsl */ `
     // Older skins grow thinner.
     alpha *= vFade * mix(1.0, 0.8, vSoft) * (1.0 - 0.25 * vAge);
 
+    #ifdef WARM
+    // Screened light over the scene: it cannot darken into brown, so no gate.
+    col = warmed(col, vWarm) + uWarmTint * vWarm * uWarmGlow * body;
+    #endif
     gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.55));
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
@@ -353,60 +372,66 @@ const tmp = {
 }
 
 /**
+ * The films' mesh: n instances of one patch, with the skins' own material.
+ * Exported so the lifecycle experiment (study 10) can show its shed films
+ * in exactly this material; AirFragments uses it for its own slots.
+ */
+export function createFilmMesh(n) {
+  const geometry = makePatch()
+  geometry.setAttribute('aSeed', new THREE.InstancedBufferAttribute(new Float32Array(n), 1))
+  const fade = new THREE.InstancedBufferAttribute(new Float32Array(n), 1)
+  const soft = new THREE.InstancedBufferAttribute(new Float32Array(n), 1)
+  const age = new THREE.InstancedBufferAttribute(new Float32Array(n), 1)
+  fade.setUsage(THREE.DynamicDrawUsage)
+  soft.setUsage(THREE.DynamicDrawUsage)
+  age.setUsage(THREE.DynamicDrawUsage)
+  geometry.setAttribute('aFade', fade)
+  geometry.setAttribute('aSoft', soft)
+  geometry.setAttribute('aAge', age)
+  const material = new THREE.ShaderMaterial({
+    fog: true,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    // Screen: the residue's way (AirWisps), never darker, never past white.
+    blending: THREE.CustomBlending,
+    blendEquation: THREE.AddEquation,
+    blendSrc: THREE.OneMinusDstColorFactor,
+    blendDst: THREE.OneFactor,
+    uniforms: THREE.UniformsUtils.merge([
+      THREE.UniformsLib.fog,
+      {
+        uTime: { value: 0 },
+        // The colonies' film light (lib/formMaterial.js), so they share one scene.
+        uLightDir: { value: new THREE.Vector3(-0.6, 0.42, -0.55).normalize() },
+        uSkyAmbient: hexUniform('#4C4A7E'),
+        uGroundAmbient: hexUniform('#22243F'),
+        uBright: hexUniform('#E2DEF6'),
+        // Opalescent: pearl, rose-lilac, periwinkle, a little aqua.
+        uPearl: hexUniform('#F3EEF2'),
+        uRose: hexUniform('#E2BCE6'),
+        uPeri: hexUniform('#AEBDF4'),
+        uAqua: hexUniform('#AFE6E2'),
+      },
+    ]),
+    vertexShader: VERTEX,
+    fragmentShader: FRAGMENT,
+  })
+  const m = new THREE.InstancedMesh(geometry, material, n)
+  m.frustumCulled = false
+  m.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+  for (let i = 0; i < n; i++) m.setMatrixAt(i, tmp.m.makeScale(0, 0, 0))
+  return m
+}
+
+/**
  * The skins, on the same floor, clock and air as the rest (AmbientAir). No
  * control of their own: their number is set by construction.
  */
 export default function AirFragments({ floor, time, drift, curl, colonyData, colony }) {
   const camera = useThree((s) => s.camera)
 
-  const mesh = useMemo(() => {
-    const geometry = makePatch()
-    const n = FRAGMENTS.slots
-    geometry.setAttribute('aSeed', new THREE.InstancedBufferAttribute(new Float32Array(n), 1))
-    const fade = new THREE.InstancedBufferAttribute(new Float32Array(n), 1)
-    const soft = new THREE.InstancedBufferAttribute(new Float32Array(n), 1)
-    const age = new THREE.InstancedBufferAttribute(new Float32Array(n), 1)
-    fade.setUsage(THREE.DynamicDrawUsage)
-    soft.setUsage(THREE.DynamicDrawUsage)
-    age.setUsage(THREE.DynamicDrawUsage)
-    geometry.setAttribute('aFade', fade)
-    geometry.setAttribute('aSoft', soft)
-    geometry.setAttribute('aAge', age)
-    const material = new THREE.ShaderMaterial({
-      fog: true,
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      // Screen: the residue's way (AirWisps), never darker, never past white.
-      blending: THREE.CustomBlending,
-      blendEquation: THREE.AddEquation,
-      blendSrc: THREE.OneMinusDstColorFactor,
-      blendDst: THREE.OneFactor,
-      uniforms: THREE.UniformsUtils.merge([
-        THREE.UniformsLib.fog,
-        {
-          uTime: { value: 0 },
-          // The colonies' film light (lib/formMaterial.js), so they share one scene.
-          uLightDir: { value: new THREE.Vector3(-0.6, 0.42, -0.55).normalize() },
-          uSkyAmbient: hexUniform('#4C4A7E'),
-          uGroundAmbient: hexUniform('#22243F'),
-          uBright: hexUniform('#E2DEF6'),
-          // Opalescent: pearl, rose-lilac, periwinkle, a little aqua.
-          uPearl: hexUniform('#F3EEF2'),
-          uRose: hexUniform('#E2BCE6'),
-          uPeri: hexUniform('#AEBDF4'),
-          uAqua: hexUniform('#AFE6E2'),
-        },
-      ]),
-      vertexShader: VERTEX,
-      fragmentShader: FRAGMENT,
-    })
-    const m = new THREE.InstancedMesh(geometry, material, n)
-    m.frustumCulled = false
-    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
-    for (let i = 0; i < n; i++) m.setMatrixAt(i, tmp.m.makeScale(0, 0, 0))
-    return m
-  }, [])
+  const mesh = useMemo(() => createFilmMesh(FRAGMENTS.slots), [])
   useEffect(
     () => () => {
       mesh.geometry.dispose()

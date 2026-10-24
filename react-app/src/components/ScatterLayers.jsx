@@ -4,6 +4,7 @@ import { buildScatterGeometry, buildStreamDebug } from '../lib/traceForms'
 import { createFormMaterial, setAccumulation } from '../lib/formMaterial'
 import { buildBranchingGeometry, growBranching } from '../lib/branching'
 import BranchNetwork from './BranchNetwork'
+import LifecycleLayer from './LifecycleLayer'
 
 /** Seconds a full Grow takes. Everything moves; nothing moves fast. */
 const GROW_SECONDS = 42
@@ -43,16 +44,31 @@ const BEAD_GLOW = 0.5
 /** The streams' splines, drawn only when asked for in the URL. */
 const DEBUG_STREAMS = typeof window !== 'undefined' && /debug=streams/.test(window.location.search)
 
+/** The bloom layer's two materials: the lifecycle's resident is drawn in them. */
+const RESIDENT_MESHES = MESHES.filter((m) => m.layer === 'bloom')
+
+/** The placement without some membranes (the lifecycle's residents, drawn on their own). */
+function withoutResidents(scatter, residents) {
+  const bloom = scatter.layers.bloom
+  return { ...scatter, layers: { ...scatter.layers, bloom: { ...bloom, instances: bloom.instances.filter((i) => !residents.includes(i)) } } }
+}
+
 /** What a mesh shows in each view. */
 function shows(layer, view) {
   if (layer === 'spline') return DEBUG_STREAMS
   return view === 'all' || view === layer || SHARED.has(layer)
 }
 
-export default function ScatterLayers({ world, scatter, accumulation, streams, params, growing, onGrowth, onGrowthEnd }) {
+export default function ScatterLayers({ world, scatter, accumulation, streams, params, growing, onGrowth, onGrowthEnd, lifecycle = null }) {
   const materials = useMemo(() => MESHES.map((m) => createFormMaterial(m)), [])
 
-  const geometry = useMemo(() => buildScatterGeometry(scatter, world), [scatter, world])
+  // Study 10 (?lifecycle=1 only): the lifecycle's residents leave the
+  // colony's merged geometry and are drawn by LifecycleLayer instead.
+  const placed = useMemo(
+    () => (lifecycle?.active ? withoutResidents(scatter, lifecycle.first) : scatter),
+    [scatter, lifecycle],
+  )
+  const geometry = useMemo(() => buildScatterGeometry(placed, world), [placed, world])
   // The branching network grows from what the colony placed (and from the
   // membrane surfaces the geometry just built). Structure, so Bridgework's
   // Amount sets how much grows; Accumulation how far it runs down the
@@ -145,6 +161,18 @@ export default function ScatterLayers({ world, scatter, accumulation, streams, p
   return (
     <group>
       <BranchNetwork networks={networks} growth={growth} waterY={waterLine} visible={params.view === 'all' || params.view === 'bridgework'} />
+      {lifecycle?.active && (
+        <LifecycleLayer
+          lifecycle={lifecycle}
+          world={world}
+          meshes={RESIDENT_MESHES}
+          growth={growth}
+          waterLine={waterLine}
+          openness={params.bloomOpenness}
+          accumulation={accumulation}
+          visible={shows('bloom', params.view)}
+        />
+      )}
       {MESHES.map((m, k) => {
         const geo = (m.layer === 'spline' ? debugGeometry : geometry[m.layer])?.[m.part]
         if (!geo) return null

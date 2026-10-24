@@ -39,7 +39,7 @@ export const SED_DISPLAY = 0.08
  * their material and gentle grades keep feeding the basins. Tuned against the
  * default landform, where neighbouring cells differ by only a few thousandths.
  */
-const SLOPE_REFERENCE = 0.008
+export const SLOPE_REFERENCE = 0.008
 
 /**
  * Activity marks the cells carrying the most material *right now*, so it is

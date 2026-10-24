@@ -26,6 +26,17 @@ the colony always shown whole.
 The **Library**, saved configurations, is secondary: its toggle appears
 with the Studies menu or in any study, not in Explore's exhibition view.
 
+**The Atlas** (`/atlas`, local first pass, 21 October 2026). An editorial
+archive on pages of its own: a landing, a portal of five chapters, and the
+chapters.
+- **Entry:** the Atlas tab beside Explore, or the title.
+- **Routing:** `Root.jsx` chooses the Atlas or the app by the URL's path
+  (`lib/route.js`). Both load lazily, so the Atlas loads no 3D scene and the
+  app's own state is untouched.
+- **Content:** in `src/atlas/content.js`, from the project's documents and
+  images. What it uses, and what is missing, is in
+  [`atlas-content.md`](atlas-content.md).
+
 ## State
 
 All of it lives in `App.jsx`, one group per concern. Explore writes the same
@@ -63,6 +74,8 @@ terrain mesh · water plane     live Field simulation (reset)  HISTORY: the sedi
 GROWTH / Grow ─► when forms, tissue, branching and the ground light appear (nothing is rebuilt)
 AIR, HAZE ─► dust, wisps, haze and colony-air settings, in every view (nothing is rebuilt)
 UNDERWATER VISIBILITY ─► how the ground below the water line and the water's veils are drawn, Explore only (nothing is rebuilt)
+?lifecycle=1 (dev flag, Explore only) ─► staggered residents of colony 0 lie down and release films; settled matter goes to a live residual
+                                         beside History (never into it), and new residents form where History + that residual allow, taking it up
 ```
 
 Volume has its own density field and its own scene; it shares only the
@@ -188,6 +201,50 @@ unchanged.
   `underwater`), so the Scatter study, Field and Shaders always draw the
   water as before. At 0 (the default) Explore draws it as before too; see
   [09](09-composition-and-light.md#water-pass-the-stream-artifact-and-underwater-visibility).
+
+## Study 10: the lifecycle demo (dev flag)
+
+Off unless the URL has `?lifecycle=1`; Explore only. Stages 0–2 are a
+bounded demo. The shared tissue, with its fold and greybox studies, is
+unfinished and paused (24 October 2026); its code is kept as it stands.
+Options:
+- `&feedback=0`: the counterfactual
+- `&lifespeed=N`: starts it faster
+- `&warm=1|2|3`: a warm accent on exchanges (A/B); `&warm=a|b`: the uptake study's two approaches
+- `&conduit=1`: a shared tissue that grows between the colonies on the same land, which matter moves through
+- `&fold=1` (with `&conduit=1`): one stretch of that tissue drawn as a 3D fold of the ground (`&foldlift=0.35` tries another height)
+- `&greybox=1|shaded` (with `&conduit=1`): the same stretch as a greybox of emerging tissue, geometry only
+
+Details and validation are in
+[study 10](10-lifecycle-concept.md#stages-02-demo-17-october-2026) (stages
+0–2 of the [demo plan](03-DEMO-EXECUTION-PLAN.md)).
+
+| Part | Where | What it does |
+|---|---|---|
+| Simulation | `lib/lifecycle.js` (`Lifecycle`) | Pure data, a fixed 0.1 s step, seeded. Several residents, each with its own stages (forming, holding, lying down, releasing, contour); films carried by `airVelocity` plus a sink speed; a **live residual** grid (History's grid and units) with per-source records and arrival times; formation from History + residual by the membrane rules, taking matter up; a matter ledger. `setPaused`, `setSpeed` |
+| Drawing | `components/LifecycleLayer.jsx`, inside `ScatterLayers` | Each resident in the bloom layer's own materials (`buildBlooms`), lying down through `uRecline`/`uBase`/`uLean` in the form vertex shader and fading through `uFade` (`formMaterial.js`); the films in the air fragments' mesh (`createFilmMesh`, exported from `AirFragments`); the deposit as a ground skin in the tissue material. Frames the patch once, through the default controls. Steps the simulation each frame |
+| Inspector | `components/LifecycleInspector.jsx` | Flag only: pause, ×1/×4/×8, reset, the warm accent's variant; residents, ledger, recent events, a map of the residual |
+| Shared tissue (paused) | `lib/conduit.js` (`TissueNet`, `tissueColonies`), `Lifecycle.circulate` (sinking in, growth, diffusion by thickness, pockets, thickening and thinning), `components/ConduitLayer.jsx` | `&conduit=1`. A tissue that grows from where residents let matter into the ground, by a mycelium-like logic: tips grow on the matter they hold toward colonies with room to grow, fuse where they meet, used paths thicken and unused ones thin to dormant traces; colonies' pockets fill through it and residents form from them. Drawn as soft pearl bands just over the ground, as wide as they are used, champagne where matter is, with pulses moving at the matter's velocity. Off: not built, frames identical |
+| Conduit fold (paused) | `Lifecycle.chooseFold` and the `passed` record (`lib/lifecycle.js`, `CONDUIT.fold`), `components/ConduitFold.jsx`, a `CONDUIT_FOLD` block in `formMaterial.js`'s film shader | `&fold=1` with the tissue. The simulation chooses one stretch into another colony once it has carried enough, and keeps it. It is drawn as two lofted skins in the bloom film: an asymmetric section that lifts in places and stays in the ground in others. Its width and the height it can reach come from the matter that has passed through it; its height now from its thickness. Its inner skin carries specks of the matter moving at its velocity. Display only: the simulation's hash is unchanged |
+| Tissue greybox (paused) | `lib/tissueGreybox.js`, `components/ConduitGreybox.jsx` | `&greybox=1\|shaded` with the tissue. At knots of the fold study's stretch (junctions, and one near the hub), each path peels up out of the ground as a membrane leaf: its size from what has passed there, its lift from that path's thickness, a little more while matter flows. Opaque grey, unlit (upper and under sides in two greys) or with one plain light. Rebuilt when the state changes (5–10 ms). Display only |
+| Warm accent (A/B) | `LifecycleLayer.jsx` (`WARM`), `WARM_GLSL` in `formMaterial.js`, a `WARM` block in `AirFragments`' film shader | `&warm=1\|2\|3\|a\|b` or the inspector. A `WARM` define compiled only into the lifecycle's own materials while a variant is chosen; reads the simulation's records of release, settling and uptake (when, and for a and b how much). Off: not compiled, frames identical |
+| Wiring | `App.jsx` | `LIFE` from the URL; `lifecycle` memoised on world, History, colonies, streams, the record's rules and a reset counter; the air settings by ref; `window.__lifecycle` for scripted checks |
+
+How it sits in the architecture:
+- **History is never written to,** and the terrain still draws History
+  alone. The residual is held as data.
+- **The residents leave the colony's merged geometry.** They are drawn by
+  `LifecycleLayer` instead; everything else is placed and drawn as before.
+- **It is begun afresh** whenever the world, History or the colonies are
+  rebuilt, on leaving Explore, and by the inspector's reset. View-only
+  controls do not reset it.
+- **No state is added,** so saved configurations are unaffected.
+- **With the flag off, nothing it adds runs.** The residents stay in the
+  merged geometry, and no simulation, inspector or global exists. The two
+  shared changes are inert: the shader's lying-down branch is skipped at
+  `uRecline` 0 and `uFade` is 1, and the orbit controls are registered as
+  the default (`makeDefault`) so the layer can frame the patch. Frames are
+  pixel-identical.
 
 ## Saved configurations
 
@@ -346,3 +403,29 @@ frozen clock (t = 50 s), on five worlds:
 | Build | `vite build` passes (built into a scratch folder) |
 | Saved configurations | An old save without the new key reads Underwater visibility 0 and keeps its own values; a save with it round-trips; unknown views are ignored |
 | Lint | No errors; the warnings are the existing kinds, none in the changed panel or App code |
+
+Results for the lifecycle prototype (2026-10-15; study 10, behind a dev
+flag):
+
+| Check | Result |
+|---|---|
+| Flag off: Explore | Pixel-identical to the committed code in 12 frames on five worlds, checked twice (after the first build and after the final changes) |
+| Flag off: generated world | Fingerprints bit-identical for all eight worlds. The library changes are new exports only (`bloomFits`, `SLOPE_REFERENCE`, `buildBlooms`) plus the new `lifecycle.js` |
+| Causal loop | Feedback on: each successor's site, size and shape follow the deposited matter (three worlds, three generations each). Feedback off: identical generations. Record erased before reading: same as off |
+| Determinism | Bit-identical across runs; Node and the browser give the same decisions |
+| Reset | A new colony seed or History starts it afresh; air density does not; the studies run none |
+| Cost and errors | 60 simulated seconds in 3.5 ms (worst step 1.8 ms); no console errors over a ×8 run to generation 2 |
+| Build and lint | Build passes. Lint: no errors; three new warnings of existing kinds (two per-frame updates, one fast-refresh notice) |
+
+Results for the lifecycle demo, stages 0–2 (2026-10-17; study 10, behind a
+dev flag):
+
+| Check | Result |
+|---|---|
+| Flag off: Explore | Pixel-identical to the committed code in 12 frames on five worlds, with the shader and controls changes in place |
+| Flag off: generated world | Fingerprints bit-identical to the commit for all eight worlds; the generation libraries are unchanged |
+| Causal loop | Default world, 600 s. Feedback on: #4 forms at 80 s on #1's residue and takes it up; #5 and #6 follow, #6 on #4's residue. Feedback off: the same films, nothing recorded, nothing forms. Only #1's residue erased: nothing forms there |
+| Matter | The ledger drifts at most 2 × 10⁻⁸ |
+| Determinism | Identical across runs; the browser's timeline matches Node's |
+| Cost | Node: 600 simulated seconds in 0.54 s, slowest step 6 ms. Browser frame rate not measured |
+| Build and lint | Build passes. Lint: no errors; 43 warnings (38 at the commit), the five new ones of existing kinds (four per-frame updates, one fast-refresh notice) |
