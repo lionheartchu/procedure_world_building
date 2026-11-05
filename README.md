@@ -179,6 +179,11 @@ The site at **residual-ecology.web.app** serves Explore and the studies as
 of 14 October, and the Atlas at `/atlas`. The lifecycle experiments run
 locally only.
 
+The Habitat, a world to be in in first person, opens at `/habitat` from the
+Habitat tab beside Explore. It shows the featured space (M2, study 20); each
+Habitat study keeps its own route, `/habitat/v0` to `/habitat/m2`. Not yet
+deployed.
+
 ## Studies
 
 | | Study | What it explores | Status |
@@ -194,7 +199,7 @@ locally only.
 | 09 | [Composition and light](docs/09-composition-and-light.md) | Gathering colonies, light held in matter, palette, water | Under review |
 | 10 | [Ecological continuity](docs/10-lifecycle-concept.md) | Residents of one patch change at different times; what they release settles as visible residue that a new resident takes up | Stages 0–2: a bounded demo behind a dev flag. Shared tissue: unfinished, paused |
 | 11 | [Embodied presence](docs/11-presence-study.md) | First-person exploration: a slowly drifting presence inside Explore's world, which changes nothing in it | Phase A: a prototype behind a dev flag, for review. Phase B (one membrane responding) planned |
-| 12 | [Habitat v0](docs/12-habitat-v0.md) | Explore's world as a place to be in, at `/habitat`: two lifecycle patches, one membrane that yields to the visitor | Prototype |
+| 12 | [Habitat v0](docs/12-habitat-v0.md) | Explore's world as a place to be in, at `/habitat/v0`: two lifecycle patches, one membrane that yields to the visitor | Prototype |
 | 13 | [Habitat spaces](docs/13-habitat-spaces.md) | Two spatial organisations, terrain-led and tissue-led (`/habitat/a`, `/habitat/b`) | Kept for comparison |
 | 14–15 | [Habitat C](docs/14-habitat-c.md) and [its visual pass](docs/15-habitat-c-visual.md) | A soft basin with an emergent canopy (`/habitat/c`), and its palette | Kept for comparison |
 | 16 | [Habitat foundation](docs/16-habitat-foundation.md) | C1 (`/habitat/c1`): the working base, one ground to the horizon | Kept for comparison |

@@ -3,6 +3,7 @@ import { ASSETS, KINDS } from './assets'
 import { CHAPTERS } from './content'
 import { DOCS, docUrl } from './docs'
 import { atlasNavigate, leaveFor } from './navigation'
+import { HABITAT_PATH, softLink } from '../lib/route'
 
 /** A link within the Atlas: a real href (so it can be opened in a new tab), with soft navigation. */
 export function Link({ to, children, ...rest }) {
@@ -103,6 +104,9 @@ export function AtlasHeader({ tone = 'light', right }) {
         </Link>
         <nav className="atlas-nav" aria-label="Main">
           <AppLink>Explore</AppLink>
+          <a href={HABITAT_PATH} onClick={softLink(HABITAT_PATH)}>
+            Habitat
+          </a>
           <Link to="/atlas/portal" aria-current="page">
             Atlas
           </Link>

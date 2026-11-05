@@ -262,11 +262,23 @@ study 10's flags. One control enters the world and returns to the overview
 It moves only the camera. It writes no state, saves nothing, and nothing in
 the world depends on it. With the flag off, nothing it adds is mounted.
 
-## The Habitat (`/habitat`, v0)
+## The Habitat (`/habitat`; v0 at `/habitat/v0`)
 
 Its own page, chosen in `Root.jsx` like the Atlas (`lib/route.js`
 `isHabitat`), lazily loaded ([study 12](12-habitat-v0.md)). It shares the
 generation and ecological code and keeps its own state:
+
+- **Routes:** `/habitat` opens the featured space, `FEATURED` in
+  `lib/habitat.js` (M2); featuring another changes only that. Every space
+  keeps its own route, `/habitat/<key>` (`v0`, `a` … `m2`).
+- **Entry:** the Habitat tab beside Explore, and in the Atlas's header
+  (`HABITAT_PATH` in `lib/route.js`).
+- **Inside:** only a small arrow back to Explore in the corner, labelled on
+  hover (`HabitatCorner` in `Habitat.jsx`), in a dark ink under a pale sky.
+  A study's own route shows its title beneath; `/habitat` shows none.
+- **Switching:** each Habitat path mounts afresh. `Root.jsx` clears the
+  previous page (and its canvas) for a frame before the new world is built,
+  so only one scene ever exists.
 
 | Part | Where |
 |---|---|

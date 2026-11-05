@@ -15,17 +15,17 @@ import { strayResidue } from './lib/scatter'
 import { buildBlooms, FormWriter } from './lib/traceForms'
 import { buildFarField } from './lib/farField'
 import { Membrane } from './lib/encounter'
-import { LOOKS, SPACES, withLook } from './lib/habitat'
+import { FEATURED, LOOKS, SPACES, withLook } from './lib/habitat'
 import { composeSpace } from './lib/habitatCompose'
 import { prerun } from './lib/habitatWorld'
 import { Commons, prerunTogether } from './lib/morph'
 import MorphAir from './components/MorphAir'
-import { usePath } from './lib/route'
+import { softLink, usePath } from './lib/route'
 import './App.css'
 import './Habitat.css'
 
 /**
- * The Habitat, v0 (`/habitat`; docs/12-habitat-v0.md): Explore's world as a
+ * The Habitat, v0 (`/habitat/v0`; docs/12-habitat-v0.md): Explore's world as a
  * place to be in. The same generation and the same ecological code, with
  * its own state: its world is derived once from a pinned configuration
  * (lib/habitat.js), and its lifecycles, encounter and presence are its own
@@ -100,8 +100,34 @@ function WaterCue({ cue, world }) {
   return null
 }
 
-/** Which space the path asks for: `/habitat` (v0), `/habitat/a`, `/habitat/b`, `/habitat/c`, `/habitat/c1`, `/habitat/d`, `/habitat/d1`. */
-const spaceOf = (path) => SPACES[path.split('/')[2]] ?? SPACES.v0
+/**
+ * The way back to Explore: a small arrow in the corner, its label shown on
+ * hover or focus, so the world stays clear. Under a pale sky (D's look and
+ * after) it is drawn in a dark ink, since Explore's pale one would vanish
+ * there. A study's title sits beneath it.
+ */
+function HabitatCorner({ title, pale }) {
+  return (
+    <div className={`habitat-corner${pale ? ' is-pale' : ''}`}>
+      <a className="habitat-back" href="/" onClick={softLink('/')}>
+        <span className="habitat-back-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M17.5 12H6.5M11 7.5 6.5 12l4.5 4.5" />
+          </svg>
+        </span>
+        <span className="habitat-back-label">Back to Explore</span>
+      </a>
+      {title && <p className="habitat-title">{title}</p>}
+    </div>
+  )
+}
+
+/**
+ * Which space the path asks for: `/habitat` the featured one (FEATURED),
+ * `/habitat/<key>` each space by its key (`v0`, `a` … `m2`).
+ */
+const spaceKey = (path) => path.split('/')[2] || null
+const spaceOf = (path) => SPACES[spaceKey(path)] ?? SPACES[FEATURED]
 
 /**
  * How the visitor moves: the space's own (smooth in C; as before elsewhere),
@@ -124,9 +150,13 @@ const CANOPY_LOOK = { tint: '#C9C8EE', gain: 1.0, edgeGlow: 0.16, specular: 0.08
 
 export default function Habitat() {
   const root = useRef(null)
-  const base = spaceOf(usePath())
+  const path = usePath()
+  const base = spaceOf(path)
   // The look asked for in the URL, else the space's own (C1's foundation), else none.
   const H = useMemo(() => withLook(base, LOOKS[LOOK_ASKED] ?? LOOKS[base.lookKey] ?? null), [base])
+  // The featured Habitat is the site's own, so it carries no study title.
+  const title = spaceKey(path) ? H.title : null
+  const paleSky = useMemo(() => new THREE.Color(H.render?.sky?.horizon ?? H.render?.background ?? '#000').getHSL({}).l > 0.5, [H])
   const showCanopy = CANOPY_ASKED ? CANOPY_ASKED !== '0' : !base.hideCanopy
   // The water reflects the look's horizon (and in D its zenith, in its own water colours), if it has them.
   const ground = useMemo(() => {
@@ -299,7 +329,7 @@ export default function Habitat() {
         <Diagnostics lifecycles={lifecycles} membrane={membrane} composed={composed} ground={ground} commons={commons} />
       </Scene>
 
-      {H.title && <p className="habitat-title">{H.title}</p>}
+      <HabitatCorner title={title} pale={paleSky} />
       <p className={`habitat-keys${hint ? '' : ' is-quiet'}`}>Drag to look · W A S D or arrows to drift · Q E lower, rise · Shift faster · scroll to edge closer</p>
     </div>
   )

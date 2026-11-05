@@ -357,6 +357,13 @@ SPACES.m2 = {
 }
 
 /**
+ * The Habitat that `/habitat` opens: the site's own, where its Habitat tab
+ * leads. Featuring another space means changing only this; every space
+ * keeps its own route, `/habitat/<key>`, as well.
+ */
+export const FEATURED = 'm2'
+
+/**
  * D1's look: open, given depth. The same sky, a step less white at the
  * horizon, its glow no longer clipping on the light's side; a thicker haze a
  * shade deeper than the horizon, so distance lightens into layered

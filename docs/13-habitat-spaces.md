@@ -3,14 +3,14 @@
 *Two first-person spaces for the design review. Neither is chosen.*
 
 > **Status, 29 October 2026: two playable studies, for review.** Local only;
-> nothing committed. The v0 Habitat (`/habitat`, [study 12](12-habitat-v0.md))
+> nothing committed. The v0 Habitat (now `/habitat/v0`, [study 12](12-habitat-v0.md))
 > and Explore are unchanged.
 
 | | |
 |---|---|
 | **A · terrain-led** | `/habitat/a` |
 | **B · tissue-led** | `/habitat/b` |
-| **Baseline (v0)** | `/habitat` |
+| **Baseline (v0)** | `/habitat/v0` |
 
 The controls, body, rendering profile and air are the same in all three:
 drag to look, W A S D or arrows to drift, Q / E lower and rise, Shift

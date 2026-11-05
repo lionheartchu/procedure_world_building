@@ -32,16 +32,137 @@
   opacity: 0;
 }
 
-.habitat-title {
+/* The corner (HabitatCorner): the way back to Explore, and a study's title
+   beneath it. Only the arrow takes the pointer, so dragging to look is
+   unaffected around it. */
+.habitat-corner {
+  --ink: 214, 208, 238;
   position: absolute;
   top: calc(clamp(1rem, 2.5vw, 1.75rem) + env(safe-area-inset-top, 0px));
-  left: 16px;
+  left: calc(16px + env(safe-area-inset-left, 0px));
   z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  pointer-events: none;
+  animation: rise-in 2.4s ease-out both;
+}
+
+/* Under a pale sky: a violet ink, with a soft pale halo so it sits in the
+   air rather than on it. */
+.habitat-corner.is-pale {
+  --ink: 66, 52, 106;
+  text-shadow: 0 0 14px rgba(240, 236, 250, 0.6);
+}
+
+.habitat-back {
+  position: relative;
+  display: block;
+  color: rgb(var(--ink));
+  text-decoration: none;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+/* The arrow, in a ring like the quiet mark's elsewhere on the site. */
+.habitat-back-mark {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  opacity: 0.45;
+  transition: opacity 500ms ease;
+}
+
+.habitat-back-mark svg {
+  width: 0.85rem;
+  height: 0.85rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 700ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* The label, beside the arrow on hover or focus; it takes no pointer itself. */
+.habitat-back-label {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 0.7rem);
+  font-family: var(--body);
+  font-size: 0.66rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-4px, -50%);
+  pointer-events: none;
+  transition:
+    opacity 500ms ease,
+    transform 700ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.habitat-back:hover .habitat-back-mark,
+.habitat-back:focus-visible .habitat-back-mark {
+  opacity: 0.85;
+}
+
+.habitat-back:hover .habitat-back-mark svg,
+.habitat-back:focus-visible .habitat-back-mark svg {
+  transform: translateX(-1.5px);
+}
+
+.habitat-back:hover .habitat-back-label,
+.habitat-back:focus-visible .habitat-back-label {
+  opacity: 0.8;
+  transform: translate(0, -50%);
+}
+
+.habitat-back:focus-visible {
+  outline: none;
+}
+
+.habitat-back:focus-visible .habitat-back-mark {
+  outline: 1px solid currentColor;
+  outline-offset: 3px;
+}
+
+/* A study's title, under the arrow. */
+.habitat-title {
   margin: 0;
   font-family: var(--body);
   font-size: 0.64rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(214, 208, 238, 0.42);
+  color: rgba(var(--ink), 0.42);
   pointer-events: none;
+}
+
+.habitat-corner.is-pale .habitat-title {
+  color: rgba(var(--ink), 0.55);
+}
+
+/* Bigger to tap on touch screens. */
+@media (hover: none) {
+  .habitat-back-mark {
+    width: 2rem;
+    height: 2rem;
+    opacity: 0.7;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .habitat-corner {
+    animation: none;
+  }
+
+  .habitat-back-mark,
+  .habitat-back-mark svg,
+  .habitat-back-label {
+    transition: none;
+  }
 }

@@ -25,7 +25,7 @@ import { placeScatter } from './lib/scatter'
 import { buildAccumulation } from './lib/accumulation'
 import { createAccumulationTexture } from './lib/formMaterial'
 import { captureState, restoreState } from './lib/savedState'
-import { navigate } from './lib/route'
+import { HABITAT_PATH, navigate, softLink } from './lib/route'
 import { Lifecycle } from './lib/lifecycle'
 import LifecycleInspector from './components/LifecycleInspector'
 import PresenceCamera from './components/PresenceCamera'
@@ -535,6 +535,8 @@ function App() {
     event.preventDefault()
     navigate('/atlas')
   }
+  // The Habitat replaces Explore on its own page (Root), so only one world runs.
+  const openHabitat = softLink(HABITAT_PATH)
 
   // W toggles wireframe on the terrain.
   useEffect(() => {
@@ -624,6 +626,8 @@ function App() {
             studiesOpen={studiesOpen}
             onToggleStudies={() => setStudiesOpen((open) => !open)}
             onAtlas={openAtlas}
+            onHabitat={openHabitat}
+            habitatHref={HABITAT_PATH}
           />
         </QuietNav>
       </header>

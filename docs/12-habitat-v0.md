@@ -9,7 +9,8 @@ its own page.*
 
 ## Running it
 
-`/habitat` (locally: `http://localhost:5173/habitat`). The camera drifts
+`/habitat/v0` (locally: `http://localhost:5173/habitat/v0`; it was `/habitat`
+until that route became the featured Habitat's). The camera drifts
 down from above onto the islet between the two places.
 
 | | |
