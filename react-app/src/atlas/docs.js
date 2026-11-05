@@ -24,6 +24,7 @@ export const DOCS = {
   study08: { title: '08 · Branching', path: 'docs/08-branching-study.md', published: true },
   study09: { title: '09 · Composition and light', path: 'docs/09-composition-and-light.md', published: true },
   study10: { title: '10 · Ecological continuity', path: 'docs/10-lifecycle-concept.md', published: false },
+  study11: { title: '11 · Embodied presence', path: 'docs/11-presence-study.md', published: false },
   handoff: { title: 'Design handoff', path: 'docs/01-PROJECT-HANDOFF.md', published: false },
   ecology: { title: 'Ecological logic', path: 'docs/02-ECOLOGICAL-LOGIC.md', published: false },
   atlas: { title: 'Atlas: content and asset map', path: 'docs/atlas-content.md', published: false },

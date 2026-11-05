@@ -18,42 +18,22 @@ import ScatterLayers from './components/ScatterLayers'
 import BaseEdge from './components/BaseEdge'
 import LibraryPanel from './components/LibraryPanel'
 import { FIELD_SIZE } from './components/Terrain'
-import { buildCellGrid, createField, SHAPING_OPS, withRelief } from './lib/field'
+import { buildCellGrid, createField, withRelief } from './lib/field'
 import { SedimentSim } from './lib/sediment'
 import { buildWorldData, runHistory } from './lib/worldData'
 import { placeScatter } from './lib/scatter'
 import { buildAccumulation } from './lib/accumulation'
 import { createAccumulationTexture } from './lib/formMaterial'
 import { captureState, restoreState } from './lib/savedState'
-import { navigate } from './lib/route'
+import { HABITAT_PATH, navigate, softLink } from './lib/route'
+import { Lifecycle } from './lib/lifecycle'
+import LifecycleInspector from './components/LifecycleInspector'
+import PresenceCamera from './components/PresenceCamera'
+import PresenceControl from './components/PresenceControl'
 import QuietNav from './components/QuietNav'
+import { DEFAULT_PARAMS, DEFAULT_SCATTER, DEFAULT_SHADER, DEFAULT_SIM, SCATTER_GROUND } from './worldDefaults'
 import { buildStreamWater, carveStreams, streamLines, streamMaterial, traceStreams } from './lib/streams'
 import './App.css'
-
-/**
- * Default state is tuned for the sediment-field character: one broad
- * low-frequency landform with a little grain on top, pushed down into basins
- * by the power op, with the tidal plane sitting at the field's midline so
- * roughly half of it floods.
- */
-const DEFAULT_PARAMS = {
-  landformScale: 1.5,
-  detailScale: 6.4,
-  detailAmount: 0.18,
-  seed: 42,
-  shaping: 'power',
-  shapingAmount: SHAPING_OPS.power.slider.default,
-  elevation: 2.7,
-  waterLevel: 0.5,
-  // Fine enough that a stream's channel spans a few vertices.
-  resolution: 224,
-}
-
-const DEFAULT_SIM = {
-  flow: 1.8,
-  deposition: 0.25,
-  supply: 0.022,
-}
 
 /**
  * The volume study opens already sectioned: the question it is asking is about
@@ -83,58 +63,7 @@ const DEFAULT_VOLUME = {
   scaffoldCurve: 0.5,
 }
 
-/**
- * The shader study reads the same terrain as the Field view; only the material
- * mode and a couple of its inputs change.
- */
-const DEFAULT_SHADER = {
-  mode: 'geological',
-  heightInfluence: 1,
-  strata: 0.45,
-  activity: 0.7,
-  pulse: 0.5,
-  fresnel: 0.7,
-  membrane: 0.5,
-  water: 0.6,
-  caustics: 0.5,
-}
 
-/**
- * The scatter study populates the same world with trace-grown forms. Only
- * design controls live here; slope limits, shore bands, thresholds and the
- * colony's quiet share are protocol, fixed in lib/scatter.js.
- *
- * `view` is the one selector: the whole colony, or one language solo — in
- * the scene, in the plan map and in the panel at once.
- */
-const DEFAULT_SCATTER = {
-  view: 'all',
-  history: 40,
-  seed: 7,
-  growth: 1,
-  bridgeAmount: 0.6,
-  bridgeReach: 5.5,
-  bloomAmount: 0.5,
-  bloomOpenness: 0.5,
-  shardAmount: 0.5,
-  shardAccumulation: 0.5,
-  // Water veins (assignment 2): part of the shared world, set from here.
-  streams: 2,
-  streamFlow: 0.5,
-  // The air (assignment 3): the scene's ambient particles. Rework phases
-  // 1–4: the base atmosphere (dust), residue in moving air (wisps), the
-  // colonies' local air, and the basin haze.
-  airDensity: 0.6,
-  airDrift: 0.5,
-  airCurl: 0.5,
-  airWisps: 0.5,
-  airWispStrength: 0.5,
-  airColony: 0.6,
-  airHaze: 0.5,
-  // Explore's Water appearance: how clearly the submerged ground reads.
-  // Presentation only, and only in Explore; 0 is the water as it was.
-  underwater: 0,
-}
 
 /** Scatter settings that trigger a recompute rather than a uniform change. */
 const RECOMPUTE_KEYS = [
@@ -149,28 +78,47 @@ const RECOMPUTE_KEYS = [
   'streamFlow',
 ]
 
+
 /**
- * The colony stands on the shader study's Dormant reading, so the ground
- * shows the same record the rules read — held down so the forms carry the
- * light. At the shader study's own settings, forty seconds of history lit
- * the whole island.
+ * Study 10, the lifecycle experiment: off unless the URL asks for it
+ * (`?lifecycle=1`; `&feedback=0` keeps the record from changing, for the
+ * counterfactual; `&lifespeed=8` runs it faster for inspection; `&warm=1|2|3`
+ * tries a variant of the warm accent on its exchanges, `&warm=a|b` one of the
+ * uptake study's two approaches; `&conduit=1` joins the colony to another by
+ * a shared tissue, and then shows uptake as approach b unless `&warm` says
+ * otherwise; with it, `&fold=1` draws one stretch of that tissue as a fold
+ * of the ground, the fold study, and `&greybox=1|shaded` the same stretch as
+ * a body of tissue in plain grey, the greybox study). Not state, not saved,
+ * no control in the panel. Explore only. Stages 0–2 are a bounded demo; the
+ * shared tissue and its two display studies are unfinished and paused.
  */
-const SCATTER_GROUND = {
-  ...DEFAULT_SHADER,
-  mode: MODES.find((m) => m.id === 'dormant').value,
-  // The base revision's shading: plateaus, shoulders and feet (Terrain.jsx).
-  relief: 1,
-  activity: 0.35,
-  pulse: 0.12,
-  // The basins hold water here as in every tab. At 0.5 (and with Dormant's
-  // clearer veil) the water changed 15% of pixels against Field's 70%, and
-  // the basins read as empty pits.
-  water: 0.85,
-  caustics: 0.35,
-  // The cleaned palette (Terrain.jsx): deep cool shadows, a finer record,
-  // water reflecting the scene's own sky.
-  grade: 1,
-}
+const LIFE = (() => {
+  if (typeof window === 'undefined') return null
+  const q = new URLSearchParams(window.location.search)
+  if (q.get('lifecycle') !== '1') return null
+  const conduit = q.get('conduit') === '1'
+  const warm = q.get('warm')
+  return {
+    feedback: q.get('feedback') !== '0',
+    speed: Math.max(0, Number(q.get('lifespeed') ?? 1)) || 1,
+    conduit,
+    fold: conduit && q.get('fold') === '1',
+    greybox: (conduit && q.get('greybox')) || undefined,
+    // The fold's height, to compare (units; 0.2 when not given).
+    foldLift: Number(q.get('foldlift')) || undefined,
+    // 1–3 the first variants; 4 (or a) and 5 (or b) the uptake study's approaches.
+    warm: { a: 4, b: 5 }[warm] ?? ([0, 1, 2, 3, 4, 5].includes(Number(warm ?? NaN)) ? Number(warm) : conduit ? 5 : 0),
+  }
+})()
+
+/**
+ * Study 11, first-person exploration (phase A): off unless the URL has
+ * `?presence=1`. One control in Explore enters the world and returns to the
+ * overview; the camera does the rest (components/PresenceCamera.jsx). It
+ * moves only the camera: nothing in the world depends on it. Not state, not
+ * saved. Combines with the lifecycle's flags.
+ */
+const PRESENCE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('presence') === '1'
 
 /** Explore's staged changes, per state group (see handleExploreChange). */
 const NO_DRAFT = { params: {}, simParams: {}, scatterParams: {} }
@@ -185,12 +133,15 @@ function App() {
   // Explore is the world as one place, and where the app opens; the studies
   // it grew from are one menu away, each unchanged.
   const [view, setView] = useState('explore')
+  // Open on the studies when the Atlas sent us here for them.
   const [studiesOpen, setStudiesOpen] = useState(() => window.history.state?.studies === true)
   const [volumeParams, setVolumeParams] = useState(DEFAULT_VOLUME)
   const [volumeStats, setVolumeStats] = useState(null)
   const [shaderParams, setShaderParams] = useState(DEFAULT_SHADER)
   const [scatterParams, setScatterParams] = useState(DEFAULT_SCATTER)
   const [growing, setGrowing] = useState(false)
+  // Study 11 (?presence=1 only): inside the world, or looking at it.
+  const [inside, setInside] = useState(false)
 
   // Rebuilding the lattice is tens of milliseconds, so the slider stays live
   // and the mesh catches up a beat later instead of stuttering under the drag.
@@ -360,6 +311,7 @@ function App() {
       }
       if (hasDraft(draftRef.current)) applyDraft()
       setView(next)
+      setInside(false)
       if (next === 'explore') setStudiesOpen(false)
     },
     [applyDraft],
@@ -438,6 +390,47 @@ function App() {
     }),
     [airDensity, airDrift, airCurl, airWisps, airWispStrength, airColony, colonies, blooms, airHaze],
   )
+
+  // Study 10 (?lifecycle=1 only): residents of the first colony live out of
+  // step on their own clock; what they release settles into a live residual
+  // over History's record, and new residents form from it and take it up.
+  // Begun again whenever the world, the record or the colonies are rebuilt.
+  // It reads the air's current settings (a ref) as it steps.
+  const airNow = useRef({ drift: airDrift, curl: airCurl, colony: airColony })
+  useEffect(() => {
+    airNow.current = { drift: airDrift, curl: airCurl, colony: airColony }
+  }, [airDrift, airCurl, airColony])
+  // A development reset begins it again from the same start.
+  const [lifeEpoch, setLifeEpoch] = useState(0)
+  const lifecycle = useMemo(() => {
+    if (!(LIFE && exploring && world && scatter && history)) return null
+    const life = new Lifecycle({
+      world,
+      scatter,
+      history,
+      field,
+      streams: streamLook.lines,
+      simParams,
+      air: airNow,
+      feedback: LIFE.feedback,
+      seed: scatterSeed,
+      conduit: LIFE.conduit,
+      fold: LIFE.fold || !!LIFE.greybox,
+    })
+    life.setSpeed(LIFE.speed)
+    life.setWarm(LIFE.warm)
+    life.foldLift = LIFE.foldLift
+    life.greybox = LIFE.greybox
+    life.epoch = lifeEpoch
+    return life
+  }, [exploring, world, scatter, history, field, streamLook, simParams, scatterSeed, lifeEpoch])
+  useEffect(() => {
+    if (LIFE) window.__lifecycle = lifecycle
+  }, [lifecycle])
+
+  // Study 11 (?presence=1 only): the air's settings the visitor is carried by.
+  const presenceAir = useMemo(() => ({ drift: airDrift, curl: airCurl, colony: airColony }), [airDrift, airCurl, airColony])
+  const leaveWorld = useCallback(() => setInside(false), [])
 
   // Explore stands on Scatter's ground, plus its one presentation control
   // for the water. The studies never see it.
@@ -542,6 +535,8 @@ function App() {
     event.preventDefault()
     navigate('/atlas')
   }
+  // The Habitat replaces Explore on its own page (Root), so only one world runs.
+  const openHabitat = softLink(HABITAT_PATH)
 
   // W toggles wireframe on the terrain.
   useEffect(() => {
@@ -596,10 +591,25 @@ function App() {
               growing={growing}
               onGrowth={handleGrowth}
               onGrowthEnd={handleGrowthEnd}
+              lifecycle={lifecycle}
+            />
+          )}
+          {PRESENCE && exploring && world && scatter && (
+            <PresenceCamera
+              world={world}
+              scatter={scatter}
+              lifecycle={lifecycle}
+              air={presenceAir}
+              inside={inside}
+              onLeave={leaveWorld}
             />
           )}
         </Scene>
       )}
+
+      {LIFE && exploring && <LifecycleInspector lifecycle={lifecycle} onReset={() => setLifeEpoch((e) => e + 1)} />}
+
+      {PRESENCE && exploring && <PresenceControl inside={inside} onToggle={() => setInside((value) => !value)} />}
 
       <header className="app-header">
         {/* Quiet over Explore's world; always shown in the studies, where the tabs are tools. */}
@@ -616,6 +626,8 @@ function App() {
             studiesOpen={studiesOpen}
             onToggleStudies={() => setStudiesOpen((open) => !open)}
             onAtlas={openAtlas}
+            onHabitat={openHabitat}
+            habitatHref={HABITAT_PATH}
           />
         </QuietNav>
       </header>

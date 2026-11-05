@@ -57,7 +57,21 @@ Each step reads the one before it, and the chain runs one way:
   replays how the forms appear; it does not grow new ones.
 
 A world that keeps writing its own history, with life feeding back into the
-record, is a direction ahead rather than the current state.
+record, is a direction ahead rather than the current state. A bounded demo
+exists behind a development flag
+([study 10](docs/10-lifecycle-concept.md#stages-02-demo-17-october-2026)):
+- **Residents change at different times.** In one small patch, they lie
+  down and release films that the air carries.
+- **Where the films settle, a visible residue stays**, beside the
+  resident's faint contour.
+- **A new resident forms** there and takes that matter up, or the patch
+  waits.
+
+It is one patch of one colony, off by default, and bounded: the patch winds
+down after about 500 s. A shared tissue between colonies, with its fold
+and greybox studies, is an unfinished experiment, paused. Feedback to
+residents, an emergent core and a history kept between sessions are
+proposed, not implemented.
 
 ![Before and after the composition and light pass: on the right, colonies gather around a first, fuller colony and light is held in the ground around them](docs/images/09-overview.png)
 
@@ -153,14 +167,22 @@ Ongoing. **Working:**
 - **The world's edge.** It is a visible square slab. The direction is an
   organically gathered landform whose edges pass into the atmosphere.
 - **Branching.** It is an exploratory close-range study on one colony.
+- **The lifecycle (study 10).** A flagged demo on one patch of one colony,
+  not part of Explore as you see it.
 - **Rebuilding.** It runs on the main thread.
 
 The full picture is in the
 [project status report](docs/project-status-2026-10.md), and open work is in
 the [backlog](backlog.md).
 
-The site at **residual-ecology.web.app** currently serves an earlier build
-(the Field and Volume views only); the current version runs locally.
+The site at **residual-ecology.web.app** serves Explore and the studies as
+of 14 October, and the Atlas at `/atlas`. The lifecycle experiments run
+locally only.
+
+The Habitat, a world to be in in first person, opens at `/habitat` from the
+Habitat tab beside Explore. It shows the featured space (M2, study 20); each
+Habitat study keeps its own route, `/habitat/v0` to `/habitat/m2`. Not yet
+deployed.
 
 ## Studies
 
@@ -175,6 +197,16 @@ The site at **residual-ecology.web.app** currently serves an earlier build
 | 07 | [Air](docs/07-air-study.md) | A particle ecology built in reviewed layers | Checkpoint |
 | 08 | [Branching](docs/08-branching-study.md) | Residual matter becoming tissue: an L-system on the ground and the membranes | Checkpoint, one colony |
 | 09 | [Composition and light](docs/09-composition-and-light.md) | Gathering colonies, light held in matter, palette, water | Under review |
+| 10 | [Ecological continuity](docs/10-lifecycle-concept.md) | Residents of one patch change at different times; what they release settles as visible residue that a new resident takes up | Stages 0–2: a bounded demo behind a dev flag. Shared tissue: unfinished, paused |
+| 11 | [Embodied presence](docs/11-presence-study.md) | First-person exploration: a slowly drifting presence inside Explore's world, which changes nothing in it | Phase A: a prototype behind a dev flag, for review. Phase B (one membrane responding) planned |
+| 12 | [Habitat v0](docs/12-habitat-v0.md) | Explore's world as a place to be in, at `/habitat/v0`: two lifecycle patches, one membrane that yields to the visitor | Prototype |
+| 13 | [Habitat spaces](docs/13-habitat-spaces.md) | Two spatial organisations, terrain-led and tissue-led (`/habitat/a`, `/habitat/b`) | Kept for comparison |
+| 14–15 | [Habitat C](docs/14-habitat-c.md) and [its visual pass](docs/15-habitat-c-visual.md) | A soft basin with an emergent canopy (`/habitat/c`), and its palette | Kept for comparison |
+| 16 | [Habitat foundation](docs/16-habitat-foundation.md) | C1 (`/habitat/c1`): the working base, one ground to the horizon | Kept for comparison |
+| 17 | [Habitat D](docs/17-habitat-d.md) | A 48-unit world of rises and shallows, 13 colonies at different ages, a horizon (`/habitat/d`) | First playable |
+| 18 | [Habitat D1](docs/18-habitat-d1.md) | Visual hierarchy, one legible lifecycle passage, why the ecology goes dormant (`/habitat/d1`) | For review |
+| 19 | [A shared cue in the air (M1)](docs/19-collective-morphogenesis.md) | A release breathes a signal (not matter) downwind; residents answer by state (`/habitat/m1`) | Exploration |
+| 20 | [The cue in the moving air (M2)](docs/20-cue-flow.md) | M1's cue drawn in the existing air wisps; the rest rule diagnosed (`/habitat/m2`) | Exploration |
 
 Screenshots for studies 01, 02 and 04 were never captured; each document
 says what to grab.

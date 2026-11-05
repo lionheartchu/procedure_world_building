@@ -75,8 +75,14 @@ const hexUniform = (hex) => ({ value: new THREE.Color(hex) })
  * tints it. Mint appears only where the simulation is currently moving
  * material.
  */
-function createTerrainMaterial() {
+function createTerrainMaterial({ far = false } = {}) {
   return new THREE.ShaderMaterial({
+    // The Habitat's far ground (`farGround` on Terrain): this same reading of
+    // the ground past the slab, where there is no sediment, no streams and no
+    // gathered light, on smooth normals (its grid is coarse), thinning into
+    // the sky far out.
+    defines: far ? { FAR: '' } : {},
+    transparent: far,
     fog: true,
     uniforms: THREE.UniformsUtils.merge([
       THREE.UniformsLib.fog,
@@ -135,8 +141,38 @@ function createTerrainMaterial() {
         // record and light that keep the ground's own colour).
         uGrade: { value: 0 },
         uShadowHue: hexUniform('#222B62'),
+        // How bright untouched ground stays in the Dormant reading (0.38
+        // everywhere but the Habitat's `look=soft` comparison).
+        uDormant: { value: 0.38 },
+        // How far the record's look quietens in the slab's outer band (0
+        // everywhere but the Habitat's foundation): the sediment piles
+        // against the closed boundary, and the far ground has none, so the
+        // edge showed as a seam.
+        uEdgeQuiet: { value: 0 },
         // Explore only: Underwater visibility. 0 leaves every tab as it was.
         uUnderwater: { value: 0 },
+        // The Habitat's far ground: where it thins into the sky (radius,
+        // units). A wider world with distant land passes its own.
+        uFarDissolve: { value: new THREE.Vector2(45, 80) },
+        // The Habitat's D1 (docs/18-habitat-d1.md), 0 everywhere else, and
+        // then nothing changes:
+        //   - uSmoothLight: the ground lit on its smooth normal, not on the
+        //     faceted one (close up, the facets showed as dark triangles)
+        //   - uReliefLight: the light reads the landform's slopes more
+        //     steeply (its normal tilted further by this much), so gentle
+        //     rises and channels show by their own shading
+        //   - uWet: moisture by the water's reach — the band above the water
+        //     the ground stays damp in (units), how much darker damp ground
+        //     is, its sheen, and the depth over which the bed under the
+        //     water deepens (units); uWetSky is what the sheen reflects
+        //   - uRecordGain: how much more of History's record shows
+        uSmoothLight: { value: 0 },
+        uReliefLight: { value: 0 },
+        uWet: { value: new THREE.Vector4(0, 0, 0, 0) },
+        uWetSky: hexUniform('#D6CFEA'),
+        // ...and the dry ground's tint, well above it (white: none).
+        uDryTint: { value: new THREE.Color(1, 1, 1) },
+        uRecordGain: { value: 0 },
       },
     ]),
     vertexShader: /* glsl */ `
@@ -163,6 +199,13 @@ function createTerrainMaterial() {
       void main() {
         vSmoothNormal = normalize(mat3(modelMatrix) * normal);
 
+        #ifdef FAR
+        vSediment = 0.0;
+        vActivity = 0.0;
+        // Coloured by the height without History's lift (aHeight, from
+        // lib/farField.js), as the slab is by its carved field.
+        vHeight = aHeight;
+        #else
         // Field coordinates, matching field.sample(u, v) exactly.
         vec2 fuv = position.xz / uFieldSize + 0.5;
         vec4 sed = texture2D(uSediment, fuv);
@@ -170,6 +213,7 @@ function createTerrainMaterial() {
         vSediment = sed.r * uSedScale;
         vActivity = sed.g;
         vHeight = aHeight;
+        #endif
 
         // Modes 2 and 3 add a little movement. Deliberately tiny — a few
         // percent of the terrain's range — so the geometry stays comparable
@@ -226,6 +270,9 @@ function createTerrainMaterial() {
       uniform float uRelief;
       uniform float uGrade;
       uniform vec3 uShadowHue;
+      uniform float uDormant;
+      uniform float uEdgeQuiet;
+      uniform vec2 uFarDissolve;
       uniform float uUnderwater;
       uniform sampler2D uStream;
       uniform float uFieldSize;
@@ -238,6 +285,12 @@ function createTerrainMaterial() {
       uniform vec3 uMembraneDeep;
       uniform vec3 uMembranePale;
       uniform vec3 uRim;
+      uniform float uSmoothLight;
+      uniform float uReliefLight;
+      uniform vec4 uWet;
+      uniform vec3 uWetSky;
+      uniform vec3 uDryTint;
+      uniform float uRecordGain;
 
       varying float vHeight;
       varying float vSediment;
@@ -279,6 +332,13 @@ function createTerrainMaterial() {
         // Smooth vertex normal, for everything that should not see facets:
         // the membrane's softness and where water light can land.
         vec3 ns = normalize(vSmoothNormal);
+        // D1: the ground's light on its smooth normal, and its slopes read
+        // more steeply (uSmoothLight, uReliefLight; both 0 elsewhere, and
+        // then n is the faceted normal as before).
+        if (uSmoothLight > 0.0 || uReliefLight > 0.0) {
+          vec3 nl = normalize(mix(n, ns, uSmoothLight));
+          n = normalize(vec3(nl.x * (1.0 + uReliefLight), nl.y, nl.z * (1.0 + uReliefLight)));
+        }
 
         // Shared reads. Every mode draws on some subset of these and nothing
         // else, which is what keeps the three readings comparable.
@@ -288,6 +348,7 @@ function createTerrainMaterial() {
         float facing = clamp(dot(n, viewDir), 0.0, 1.0);
         float rim = pow(1.0 - facing, 3.0);
         float sed = clamp(vSediment / uSedScale, 0.0, 1.0);
+        sed *= 1.0 - uEdgeQuiet * smoothstep(0.84, 0.99, max(abs(vWorldPos.x), abs(vWorldPos.z)) / (0.5 * uFieldSize));
         float act = clamp(vActivity, 0.0, 1.0);
         // Only real accumulation counts; a thin dusting reads as nothing.
         float residueMask = smoothstep(0.12, 0.62, sed);
@@ -295,7 +356,11 @@ function createTerrainMaterial() {
         float E = max(uElevation, 0.001);
         float dn = (uWaterY - vWorldPos.y) / E;
         // Water veins: damp banks (R), settled material (G), flow (B).
+        #ifdef FAR
+        vec4 stream = vec4(0.0);
+        #else
         vec4 stream = texture2D(uStream, clamp(vWorldPos.xz / uFieldSize + 0.5, 0.0, 1.0));
+        #endif
         float channel = smoothstep(0.02, 0.25, stream.r);
 
         // Each mode writes the lit surface and, separately, anything emissive
@@ -372,7 +437,7 @@ function createTerrainMaterial() {
           // controls say: both the residue and the pulse are behind a
           // threshold on sediment, so a thin dusting reads as nothing and only
           // real accumulation lights up. The pulse never touches the base.
-          vec3 dormant = mix(rampColor(vHeight - uWaterLevel) * 0.38, uDeepBasin, 0.25);
+          vec3 dormant = mix(rampColor(vHeight - uWaterLevel) * uDormant, uDeepBasin, 0.25);
           // The record pales the ground toward the sediment's tint. In
           // Scatter (uGrade) less of it, only where it is really thick, and
           // broken by the deposit's grain: as a broad smooth mix it laid soft
@@ -382,6 +447,10 @@ function createTerrainMaterial() {
             float grainR = 0.7 + 0.6 * valueNoise(vWorldPos.xz * 6.5 + 11.0);
             recordMix = mix(recordMix, smoothstep(0.3, 0.8, sed) * uActivityInfluence * 0.6 * grainR, uGrade);
           }
+          // D1: more of the record shows, where it is (0 elsewhere).
+          // (Only where it is thick, and broken by its grain as above: a broad
+          // pale mix washed every shore, where the record lies widely.)
+          if (uRecordGain > 0.0) recordMix = clamp(recordMix * (1.0 + uRecordGain), 0.0, 0.85);
           vec3 residue = mix(dormant, uSedimentTint * 0.85, recordMix);
           lit = residue * (ambient + uLightColor * wrap * 0.7);
 
@@ -404,7 +473,11 @@ function createTerrainMaterial() {
           // denser the matter, the more it gives off. Where nothing gathered,
           // the record's own glow is held down, so the light has somewhere
           // to come from and the quiet ground stays quiet.
+          #ifdef FAR
+          vec4 acc = vec4(0.0, 0.0, 0.5, 0.0);
+          #else
           vec4 acc = accumAt(vWorldPos.xz);
+          #endif
           float gathered = acc.r;
           float quiet = uAccumOn > 0.0 ? mix(0.45, 1.0, smoothstep(0.0, 0.35, gathered)) : 1.0;
           if (uAccumOn > 0.0) {
@@ -504,6 +577,30 @@ function createTerrainMaterial() {
         lit *= mix(vec3(1.0), vec3(0.9, 0.94, 1.1), stream.r);
         lit = mix(lit, lit * 1.25 + uSedimentTint * 0.03, stream.g * 0.6);
 
+        // D1: moisture, by how far the water reaches (uWet; 0 elsewhere).
+        // Ground in the band just above the water stays damp: darker, a
+        // little deeper in its own hue, and, where it lies flat, glossy at
+        // grazing angles (it reflects the sky, as wet ground does), most at
+        // the water's edge and along the streams' damp banks. Where History's
+        // record lies thick the ground drains (a bar of settled matter stands
+        // pale and dry among damp hollows). Under the water the bed deepens
+        // with depth, so water lies over something deeper than the exposed
+        // ground beside it.
+        if (uWet.y > 0.0) {
+          float aboveW = vWorldPos.y - uWaterY;
+          float damp = max(1.0 - smoothstep(0.0, uWet.x, aboveW), smoothstep(0.1, 0.6, stream.r)) * step(0.0, aboveW);
+          damp *= 1.0 - 0.75 * smoothstep(0.35, 0.85, sed);
+          float bed = aboveW < 0.0 ? 1.0 - exp(aboveW / max(uWet.w, 1e-3)) : 0.0;
+          float shade = damp * uWet.y + bed * (uWet.y + 0.2);
+          lit *= 1.0 - shade;
+          lit = mix(lit, lit * vec3(0.97, 0.95, 1.06), clamp(damp + bed, 0.0, 1.0));
+          float graze = pow(1.0 - clamp(dot(ns, viewDir), 0.0, 1.0), 4.0) * smoothstep(0.95, 0.995, ns.y);
+          emit += uWetSky * graze * damp * uWet.z;
+          // Ground the water never reaches is dry: a shade warmer, toward pearl.
+          float dry = (1.0 - damp) * smoothstep(uWet.x, uWet.x * 4.0, aboveW);
+          lit = mix(lit, lit * uDryTint, dry);
+        }
+
         if (uCaustics > 0.0 && uMode > 0.5) {
           float reach = dn >= 0.0 ? exp(-dn * 3.5) : 1.0 - smoothstep(0.0, 0.06, -dn);
           float receive = 0.35 + 0.65 * clamp(ns.y, 0.0, 1.0);
@@ -555,6 +652,10 @@ function createTerrainMaterial() {
         }
 
         gl_FragColor = vec4(col, 1.0);
+        #ifdef FAR
+        // Far out it thins into the sky's horizon, as the far water does.
+        gl_FragColor.a = 1.0 - smoothstep(uFarDissolve.x, uFarDissolve.y, length(vWorldPos.xz));
+        #endif
 
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -580,8 +681,17 @@ function createTerrainMaterial() {
  *
  * No reflection pass, no refraction, no render target.
  */
-function createWaterMaterial() {
+function createWaterMaterial({ far = false, cue = null } = {}) {
+  const defines = {}
+  // The Habitat's far water (see `far` on Terrain): the same water beyond
+  // the slab, its depth from the far ground, taking over where the slab's
+  // own water fades at the edge.
+  if (far) defines.FAR = ''
+  // The Habitat's spatial studies (`cue` on Terrain): a lit waterline, and a
+  // ring on the surface under a visitor hovering over the water.
+  if (cue) defines.CUE = ''
   return new THREE.ShaderMaterial({
+    defines,
     fog: true,
     transparent: true,
     depthWrite: false,
@@ -607,15 +717,38 @@ function createWaterMaterial() {
         uZenith: hexUniform('#0C0F26'),
         uGlint: hexUniform('#C9C3EC'),
         uLightDir: { value: new THREE.Vector3(-0.6, 0.42, -0.55).normalize() },
+        uFarDissolve: { value: new THREE.Vector2(45, 80) },
+        // The cue's waterline, how strongly (the ring is unaffected).
+        uCueLine: { value: 0.55 },
+        // The sky it reflects: the extra lift along the horizon (0.35), and
+        // how much of the sky's brightness reflects (1). D1 reflects a little
+        // less, without the lift, so far water stays a step below the sky
+        // instead of joining it in a white band.
+        uSkyLift: { value: 0.35 },
+        uReflect: { value: 1 },
+        // The veil's opacity over shallow and deep water (as before: 0.14, 0.46).
+        uVeil: { value: new THREE.Vector2(0.14, 0.46) },
+        // How far the slow swell tilts the surface (0.9 as before). D1 tilts
+        // it further, so the sky's gradient shows across the shallows in
+        // broad soft bands, as on real still water, and the water reads as a
+        // surface rather than as more lavender ground.
+        uSwell: { value: 0.9 },
       },
     ]),
     vertexShader: /* glsl */ `
       varying vec3 vWorldPos;
+      #ifdef FAR
+      attribute float aDepth;
+      varying float vDepth;
+      #endif
 
       #include <common>
       #include <fog_pars_vertex>
 
       void main() {
+        #ifdef FAR
+        vDepth = aDepth;
+        #endif
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
         vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
         gl_Position = projectionMatrix * mvPosition;
@@ -641,8 +774,21 @@ function createWaterMaterial() {
       uniform vec3 uZenith;
       uniform vec3 uGlint;
       uniform vec3 uLightDir;
+      uniform vec2 uFarDissolve;
+      uniform float uCueLine;
+      uniform float uSkyLift;
+      uniform float uReflect;
+      uniform vec2 uVeil;
+      uniform float uSwell;
 
       varying vec3 vWorldPos;
+      #ifdef FAR
+      varying float vDepth;
+      #endif
+      #ifdef CUE
+      // The visitor over the water: x, z, height above the surface, presence (0..1).
+      uniform vec4 uCue;
+      #endif
 
       #include <common>
       #include <fog_pars_fragment>
@@ -663,14 +809,23 @@ function createWaterMaterial() {
         // never shows a square edge — it belongs to the basins, not to a sea
         // the terrain sits in.
         vec2 fuv = vWorldPos.xz / uFieldSize + 0.5;
+        vec2 edgeDist = min(fuv, 1.0 - fuv);
+        #ifdef FAR
+        // Beyond the slab, over the far ground; inside its edge, as much as
+        // the slab's own water has faded there.
+        float depth = vDepth;
+        if (depth <= 0.0) discard;
+        float bounds = 1.0 - smoothstep(0.0, 0.06, min(edgeDist.x, edgeDist.y));
+        if (bounds <= 0.0) discard;
+        #else
         vec4 sim = texture2D(uSim, clamp(fuv, 0.0, 1.0));
         // B carries the ground height over -0.5…1.5: the relief lifts land
         // above 1 and deepens basins below 0, which 0…1 clipped.
         float ground = (sim.b * 2.0 - 1.0) * uElevation + sim.r * uSedScale * uSedLift;
         float depth = vWorldPos.y - ground;
         if (depth <= 0.0) discard;
-        vec2 edgeDist = min(fuv, 1.0 - fuv);
         float bounds = smoothstep(0.0, 0.06, min(edgeDist.x, edgeDist.y));
+        #endif
 
         // Offset and widened: the ground here is an 8-bit, 128-cell copy of
         // the mesh, so without the offset the water still has some opacity
@@ -687,7 +842,7 @@ function createWaterMaterial() {
         float e = 0.6;
         float s0 = swell(p);
         vec2 grad = vec2(swell(p + vec2(e, 0.0)) - s0, swell(p + vec2(0.0, e)) - s0) / e;
-        vec3 nrm = normalize(vec3(-grad.x * 0.9, 1.0, -grad.y * 0.9));
+        vec3 nrm = normalize(vec3(-grad.x * uSwell, 1.0, -grad.y * uSwell));
 
         vec3 viewDir = normalize(cameraPosition - vWorldPos);
         float facing = clamp(dot(nrm, viewDir), 0.0, 1.0);
@@ -696,7 +851,8 @@ function createWaterMaterial() {
         // The sky it reflects: the same ramp the backdrop dome draws.
         vec3 r = reflect(-viewDir, nrm);
         vec3 sky = mix(uHorizon, uZenith, smoothstep(-0.02, 0.5, r.y));
-        sky += uHorizon * 0.35 * (1.0 - smoothstep(0.0, 0.12, abs(r.y)));
+        sky += uHorizon * uSkyLift * (1.0 - smoothstep(0.0, 0.12, abs(r.y)));
+        sky *= uReflect;
 
         vec3 body = mix(uShallow, uDeepWater, deep);
         // Underwater visibility: a clearer, more violet body (below, a
@@ -719,13 +875,33 @@ function createWaterMaterial() {
         // A veil over the ground rather than a sheet hiding it: even the
         // deepest basin lets the terrain's form read through, so the terrain
         // stays the subject and the water reads as something pooled in it.
-        float alpha = mix(0.14, 0.46, deep) * uClarity;
+        float alpha = mix(uVeil.x, uVeil.y, deep) * uClarity;
         if (uUnderwater > 0.0) alpha *= 1.0 - 0.45 * uUnderwater;
         alpha = shore * bounds * clamp(alpha + fres * 0.4 + glint * 0.2 + light * 0.06, 0.0, 0.8);
         // The Water surface control runs the whole way to nothing, so the
         // ground light can be judged without the veil over it.
         alpha *= uWater;
+        #ifdef CUE
+        {
+          // The waterline: a fine pale line where the water meets the ground,
+          // so where water begins is legible from eye height.
+          float line = (1.0 - smoothstep(0.012 * E, 0.045 * E, depth)) * smoothstep(0.0, 0.01 * E, depth) * bounds;
+          // The visitor's place on the surface: a soft ring under them, slowly
+          // widening, only near the surface (it is where they would touch it).
+          float r = length(vWorldPos.xz - uCue.xy);
+          float near = uCue.w * (1.0 - smoothstep(0.25, 1.4, uCue.z));
+          float wave = fract(uTime * 0.35);
+          float ring = exp(-pow((r - (0.28 + 0.5 * wave)) / 0.035, 2.0)) * (1.0 - wave) + 0.5 * exp(-pow((r - 0.24) / 0.05, 2.0));
+          float cue = clamp(line * uCueLine + ring * near * 0.5, 0.0, 1.0);
+          col = mix(col, uGlint * 1.15, cue);
+          alpha = max(alpha, cue * 0.75);
+        }
+        #endif
 
+        #ifdef FAR
+        // Far out it thins into the sky's horizon, as the far ground does.
+        alpha *= 1.0 - smoothstep(uFarDissolve.x, uFarDissolve.y, length(vWorldPos.xz));
+        #endif
         gl_FragColor = vec4(col, alpha);
 
         #include <tonemapping_fragment>
@@ -918,11 +1094,64 @@ export default function Terrain({
   shader,
   streams,
   accumulation = null,
+  far = null,
+  cue = null,
+  farGround = null,
+  // The slab's side: FIELD_SIZE, or a wider world's (the Habitat's D).
+  size = FIELD_SIZE,
 }) {
   const { resolution, elevation, waterLevel } = params
 
   const material = useMemo(() => createTerrainMaterial(), [])
-  const waterMaterial = useMemo(() => createWaterMaterial(), [])
+  const waterMaterial = useMemo(() => {
+    const m = createWaterMaterial({ cue })
+    if (cue) m.uniforms.uCue = cue
+    return m
+  }, [cue])
+  // The Habitat only (`far`: the far field's water, { position, depth, index }
+  // around the slab, lib/farField.js). It shares the slab water's uniforms,
+  // so the two are one water.
+  const farWater = useMemo(() => {
+    if (!far) return null
+    const m = createWaterMaterial({ far: true })
+    m.uniforms = waterMaterial.uniforms
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(far.position, 3))
+    geo.setAttribute('aDepth', new THREE.BufferAttribute(far.depth, 1))
+    geo.setIndex(new THREE.BufferAttribute(far.index, 1))
+    geo.computeBoundingSphere()
+    return { material: m, geometry: geo }
+  }, [far, waterMaterial])
+  useEffect(
+    () => () => {
+      farWater?.material.dispose()
+      farWater?.geometry.dispose()
+    },
+    [farWater],
+  )
+  const farRef = useRef(null)
+  // The Habitat's far ground drawn in this ground's own material (`farGround`:
+  // { position, index }, lib/farField.js): it shares the slab material's
+  // uniforms, so the two are one ground in palette, light and grading.
+  const farGroundMesh = useMemo(() => {
+    if (!farGround) return null
+    const m = createTerrainMaterial({ far: true })
+    m.uniforms = material.uniforms
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(farGround.position, 3))
+    if (farGround.tone) geo.setAttribute('aHeight', new THREE.BufferAttribute(farGround.tone, 1))
+    geo.setIndex(new THREE.BufferAttribute(farGround.index, 1))
+    geo.computeVertexNormals()
+    geo.computeBoundingSphere()
+    return { material: m, geometry: geo }
+  }, [farGround, material])
+  useEffect(
+    () => () => {
+      farGroundMesh?.material.dispose()
+      farGroundMesh?.geometry.dispose()
+    },
+    [farGroundMesh],
+  )
   const streamWaterMaterial = useMemo(() => createStreamWaterMaterial(), [])
 
   // The water lying in each stream's channel (lib/streams.js builds it).
@@ -941,16 +1170,20 @@ export default function Terrain({
 
   // One texture carries the simulation to the GPU: R = sediment, G = activity,
   // B = base ground height (so the water surface knows how deep it is).
+  // As fine as the simulation's grid: SIM_RES, or History's finer one in a
+  // wider world.
+  const simRes = sim?.res ?? SIM_RES
   const { texture, pixels } = useMemo(() => {
-    const pixels = new Uint8Array(SIM_RES * SIM_RES * 4)
-    const texture = new THREE.DataTexture(pixels, SIM_RES, SIM_RES, THREE.RGBAFormat)
+    const pixels = new Uint8Array(simRes * simRes * 4)
+    const texture = new THREE.DataTexture(pixels, simRes, simRes, THREE.RGBAFormat)
     texture.minFilter = THREE.LinearFilter
     texture.magFilter = THREE.LinearFilter
     texture.wrapS = THREE.ClampToEdgeWrapping
     texture.wrapT = THREE.ClampToEdgeWrapping
     texture.needsUpdate = true
     return { texture, pixels }
-  }, [])
+  }, [simRes])
+  useEffect(() => () => texture.dispose(), [texture])
 
   material.uniforms.uSediment.value = texture
   waterMaterial.uniforms.uSim.value = texture
@@ -969,7 +1202,7 @@ export default function Terrain({
 
   const geometry = useMemo(() => {
     const grid = buildHeightGrid(field, resolution)
-    const geo = new THREE.PlaneGeometry(FIELD_SIZE, FIELD_SIZE, resolution, resolution)
+    const geo = new THREE.PlaneGeometry(size, size, resolution, resolution)
     geo.rotateX(-Math.PI / 2)
 
     // After the rotation, vertex k = j * (res + 1) + i sits at u = i / res,
@@ -1003,7 +1236,7 @@ export default function Terrain({
     geo.computeBoundingSphere()
     geo.computeBoundingBox()
     return geo
-  }, [field, resolution, elevation])
+  }, [field, resolution, elevation, size])
 
   const waterY = (waterLevel - 0.5) * elevation
   const waterRef = useRef(null)
@@ -1033,6 +1266,12 @@ export default function Terrain({
     }
 
     set('uSediment', texture)
+    set('uFieldSize', size)
+    // A look's own ground colours (D's: the ramp and the ground's light,
+    // lighter under its pale sky): uniform name → colour. Absent everywhere
+    // else, so the ramp stays palette.js's and the light as authored here.
+    if (shader?.colours) for (const name in shader.colours) uniforms[name]?.value.copy(shader.colours[name])
+    if (uniforms.uFarDissolve) uniforms.uFarDissolve.value.set(...(shader?.farDissolve ?? [45, 80]))
     setAccumulation(uniforms, accumulation)
     set('uWaterLevel', waterLevel)
     set('uSedLift', elevation * SEDIMENT_LIFT)
@@ -1049,6 +1288,15 @@ export default function Terrain({
     // Outside the if below: the Field view has no descriptor and must not
     // keep Scatter's grade after a visit there.
     set('uGrade', shader?.grade ?? 0)
+    set('uDormant', shader?.dormant ?? 0.38)
+    set('uEdgeQuiet', shader?.edgeQuiet ?? 0)
+    // D1's ground (0 everywhere else: as before).
+    set('uSmoothLight', shader?.smoothLight ?? 0)
+    set('uReliefLight', shader?.reliefLight ?? 0)
+    set('uRecordGain', shader?.recordGain ?? 0)
+    if (uniforms.uWet) uniforms.uWet.value.set(...(shader?.wet ?? [0, 0, 0, 0]))
+    if (uniforms.uWetSky && shader?.skyHorizon) uniforms.uWetSky.value.copy(shader.skyHorizon)
+    if (uniforms.uDryTint) uniforms.uDryTint.value.setRGB(...(shader?.dryTint ?? [1, 1, 1]))
     // Explore's Underwater visibility; nothing else sets it.
     const underwater = shader?.underwater ?? 0
     set('uUnderwater', underwater)
@@ -1077,6 +1325,17 @@ export default function Terrain({
     }
     const mode = shader ? shader.mode : 0
     setWater('uSim', texture)
+    setWater('uFieldSize', size)
+    setWater('uCueLine', shader?.cueLine ?? 0.55)
+    setWater('uSkyLift', shader?.skyLift ?? 0.35)
+    setWater('uReflect', shader?.reflect ?? 1)
+    if (water.uVeil) water.uVeil.value.set(...(shader?.veil ?? [0.14, 0.46]))
+    setWater('uSwell', shader?.swell ?? 0.9)
+    if (water.uFarDissolve) water.uFarDissolve.value.set(...(shader?.farDissolve ?? [45, 80]))
+    // A look's own sky, reflected (only where it gives one).
+    if (shader?.skyZenith && water.uZenith) water.uZenith.value.copy(shader.skyZenith)
+    if (shader?.waterShallow && water.uShallow) water.uShallow.value.copy(shader.waterShallow)
+    if (shader?.waterDeep && water.uDeepWater) water.uDeepWater.value.copy(shader.waterDeep)
     setWater('uTime', t)
     setWater('uWater', shader ? shader.water : 0.85)
     setWater('uLight', shader ? shader.caustics : 0)
@@ -1087,11 +1346,16 @@ export default function Terrain({
     // Scatter's cleaned palette: the water reflects the sky the scene
     // actually has (the dome's horizon), not a paler one, so the basins —
     // where the darks should be deepest — do not take a grey sheen.
-    if (water.uHorizon) water.uHorizon.value.copy(shader?.grade ? SKY_HORIZON : WATER_HORIZON)
+    if (water.uHorizon) water.uHorizon.value.copy(shader?.skyHorizon ?? (shader?.grade ? SKY_HORIZON : WATER_HORIZON))
 
     // The streams' water rides the same ground: sediment lift and breathing.
     const sw = streamWaterMaterial.uniforms
     sw.uSediment.value = texture
+    if (sw.uFieldSize) sw.uFieldSize.value = size
+    // A look's own water and sky (D's), as the basin water takes them.
+    if (shader?.waterShallow && sw.uShallow) sw.uShallow.value.copy(shader.waterShallow)
+    if (shader?.skyZenith && sw.uZenith) sw.uZenith.value.copy(shader.skyZenith)
+    if (shader?.skyZenith && shader?.skyHorizon && sw.uHorizon) sw.uHorizon.value.copy(shader.skyHorizon)
     if (sw.uWaterY) sw.uWaterY.value = waterY
     if (sw.uUnderwater) sw.uUnderwater.value = underwater
     sw.uTime.value = t
@@ -1117,6 +1381,7 @@ export default function Terrain({
     liveGeometry.current = geometry
 
     if (waterRef.current) waterRef.current.position.y = tideY
+    if (farRef.current) farRef.current.position.y = tideY - waterY
 
     if (running) {
       accumulator.current += Math.min(delta, 0.12)
@@ -1158,10 +1423,12 @@ export default function Terrain({
         ref={waterRef}
         material={waterMaterial}
       >
-        <planeGeometry args={[FIELD_SIZE, FIELD_SIZE, 1, 1]} />
+        <planeGeometry args={[size, size, 1, 1]} />
       </mesh>
 
       {streamGeometry && <mesh geometry={streamGeometry} material={streamWaterMaterial} renderOrder={1} />}
+      {farWater && <mesh ref={farRef} geometry={farWater.geometry} material={farWater.material} frustumCulled={false} />}
+      {farGroundMesh && <mesh geometry={farGroundMesh.geometry} material={farGroundMesh.material} renderOrder={-1} frustumCulled={false} />}
     </group>
   )
 }

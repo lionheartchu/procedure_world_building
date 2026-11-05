@@ -8,11 +8,12 @@ const STUDIES = [
 
 /**
  * Quiet text tabs under the title. Explore is the world as one place; the
- * Atlas is its archive, on pages of its own; the studies it grew from sit
- * behind a secondary Studies menu, each still its own view with its own
- * panel.
+ * Habitat is a world to be in, in first person (the featured one; the
+ * others keep routes of their own); the Atlas is its archive, on pages of
+ * its own; the studies it grew from sit behind a secondary Studies menu,
+ * each still its own view with its own panel.
  */
-export default function ViewTabs({ value, onChange, studiesOpen, onToggleStudies, onAtlas }) {
+export default function ViewTabs({ value, onChange, studiesOpen, onToggleStudies, onAtlas, onHabitat, habitatHref }) {
   const inStudy = value !== 'explore'
   return (
     <nav className="view-tabs" aria-label="View">
@@ -24,6 +25,11 @@ export default function ViewTabs({ value, onChange, studiesOpen, onToggleStudies
       >
         Explore
       </button>
+      {habitatHref && (
+        <a className="view-tab" href={habitatHref} onClick={onHabitat}>
+          Habitat
+        </a>
+      )}
       <a className="view-tab" href="/atlas" onClick={onAtlas}>
         Atlas
       </a>

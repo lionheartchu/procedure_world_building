@@ -149,7 +149,10 @@ export function airDensity(x, z, t, floor) {
   const b = Math.pow(0.5 + 0.5 * Math.sin(-0.4 * x + 0.62 * z + 2.0 * w2), 5)
   const bands = Math.max(a, 0.6 * b)
   const low = 1 - smoothstep(DENSITY.low[0], DENSITY.low[1], floor.at(x, z) - floor.waterY)
-  const reach = 1 - smoothstep(DENSITY.reach[0], DENSITY.reach[1], Math.max(Math.abs(x), Math.abs(z)))
+  // The land's reach follows the floor's extent: DENSITY.reach on the
+  // 26-unit slab, as far again past the centre on a wider one.
+  const [r0, r1] = floor.size ? [floor.size / 2 - 4, floor.size / 2 + 1] : DENSITY.reach
+  const reach = 1 - smoothstep(r0, r1, Math.max(Math.abs(x), Math.abs(z)))
   return Math.max(DENSITY.floor, reach * (0.05 + 0.95 * bands) * (0.45 + 0.55 * low))
 }
 
@@ -161,7 +164,12 @@ export function airDensity(x, z, t, floor) {
  * A membrane leans toward the water and stands on its base line; its
  * obstacle sits a little toward the lean, as long as the membrane is wide.
  */
-export function colonyAirData(colonies, blooms) {
+export function colonyAirData(colonies, blooms, { all = false, near = null } = {}) {
+  // The shaders hold at most COLONY_AIR's counts. `all` (the CPU's own use,
+  // in a world with more colonies than that: the Habitat's D) keeps every
+  // one; `near` ([x, z]) keeps the nearest, for a shader that follows the
+  // visitor through such a world.
+  const dist = (p) => (near ? Math.hypot(p[0] - near[0], p[2] - near[1]) : 0)
   const obstacles = []
   for (const m of blooms ?? []) {
     const D = [Math.cos(m.lean), Math.sin(m.lean)]
@@ -177,14 +185,20 @@ export function colonyAirData(colonies, blooms) {
   for (const c of colonies ?? []) {
     obstacles.push({ c: [c.x, c.y, c.z], h: 2.4, b: [1, 0], la: 0.9 * c.radius, lc: 0.9 * c.radius, s: COLONY_AIR.colony })
   }
+  const cs = (colonies ?? []).map((c) => [c.x, c.y, c.z, c.radius])
+  if (all) return { colonies: cs, obstacles }
+  if (near) {
+    cs.sort((a, b) => dist(a) - dist(b))
+    obstacles.sort((a, b) => dist(a.c) - dist(b.c))
+  }
   return {
-    colonies: (colonies ?? []).slice(0, COLONY_AIR.maxColonies).map((c) => [c.x, c.y, c.z, c.radius]),
+    colonies: cs.slice(0, COLONY_AIR.maxColonies),
     obstacles: obstacles.slice(0, COLONY_AIR.maxObstacles),
   }
 }
 
 /** The global flow at p: horizontal velocity, the undulation, and the stream function. */
-function airWaves(x, y, z, t, controls) {
+export function airWaves(x, y, z, t, controls) {
   const { drift, curl } = controls
   let cx = 0
   let cz = 0
@@ -329,7 +343,8 @@ export const AIR_GLSL = /* glsl */ `
     float b = pow(0.5 + 0.5 * sin(-0.4 * xz.x + 0.62 * xz.y + 2.0 * w2), 5.0);
     float bands = max(a, 0.6 * b);
     float low = 1.0 - smoothstep(${f(DENSITY.low[0])}, ${f(DENSITY.low[1])}, airFloor(xz) - uWaterY);
-    float reach = 1.0 - smoothstep(${f(DENSITY.reach[0])}, ${f(DENSITY.reach[1])}, max(abs(xz.x), abs(xz.y)));
+    // DENSITY.reach on the 26-unit slab (9, 14), as far past the centre on a wider one.
+    float reach = 1.0 - smoothstep(uFieldSize * 0.5 - 4.0, uFieldSize * 0.5 + 1.0, max(abs(xz.x), abs(xz.y)));
     return max(${f(DENSITY.floor)}, reach * (0.05 + 0.95 * bands) * (0.45 + 0.55 * low));
   }
 

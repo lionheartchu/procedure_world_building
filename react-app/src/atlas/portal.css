@@ -1,0 +1,476 @@
+/*
+ * The Atlas portal (Portal.jsx): five specimens in one quiet atmosphere.
+ *
+ * A lavender-to-pearl ground with broad, slow mist; a composed stage that
+ * keeps its proportions and scales to the window; light held around the
+ * centre; a pale plane, barely reflective, that the nearer specimens rest on.
+ * Everything here is abstract and soft: no scenery, no lines, no particles.
+ */
+
+.atlas-portal {
+  position: relative;
+  min-height: 100svh;
+  padding-bottom: 1.6rem;
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    radial-gradient(90% 60% at 50% 34%, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0) 72%),
+    linear-gradient(180deg, #f7f5fb 0%, #efeaf7 40%, #ebe5f5 62%, #e6e0f2 100%);
+}
+
+/* --- the shared atmosphere ------------------------------------------------ */
+
+.portal-air {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.portal-mist {
+  position: absolute;
+  border-radius: 50%;
+  animation: portal-mist 70s ease-in-out infinite alternate;
+}
+
+.mist-1 {
+  top: 26%;
+  left: -12%;
+  width: 62%;
+  height: 46%;
+  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0));
+}
+
+.mist-2 {
+  top: 14%;
+  right: -14%;
+  width: 58%;
+  height: 44%;
+  background: radial-gradient(closest-side, rgba(250, 248, 255, 0.62), rgba(250, 248, 255, 0));
+  animation-duration: 90s;
+  animation-direction: alternate-reverse;
+}
+
+/* A low, wide band of haze where the plane meets the air. */
+.mist-3 {
+  top: 50%;
+  left: -20%;
+  width: 140%;
+  height: 26%;
+  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0));
+  animation-duration: 110s;
+}
+
+@keyframes portal-mist {
+  from {
+    transform: translate3d(-1.5%, 0, 0);
+  }
+  to {
+    transform: translate3d(1.5%, -1%, 0);
+  }
+}
+
+/* --- the heading ------------------------------------------------------------- */
+
+.portal-intro {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+  text-align: center;
+}
+
+.portal-heading {
+  margin: 0;
+  font-size: clamp(2.1rem, 3.2vw, 3rem);
+  font-weight: 300;
+  line-height: 1;
+  color: var(--ink);
+}
+
+.portal-lede {
+  margin: 0.7rem 0 0;
+  font-size: 1.12rem;
+  font-style: italic;
+  font-weight: 300;
+  color: var(--ink-2);
+}
+
+/* --- the stage ------------------------------------------------------------- */
+
+.portal-stage-wrap {
+  position: relative;
+  padding: 0 var(--gutter);
+}
+
+/*
+ * The composition keeps one proportion and scales with the window: as wide
+ * as fits beside the gutters, and short enough that the whole of it sits
+ * below the heading without scrolling.
+ */
+.portal-stage {
+  --mx: 0;
+  --my: 0;
+  position: relative;
+  width: min(1560px, 100%, calc((100svh - 13.5rem) * 2));
+  aspect-ratio: 2 / 1;
+  margin: 0.4rem auto 0;
+  container-type: inline-size;
+}
+
+/* Light held around the centre, behind Life Cycles. */
+.portal-light {
+  position: absolute;
+  top: 2%;
+  left: 30%;
+  width: 40%;
+  height: 72%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.78), rgba(255, 252, 255, 0.28) 55%, rgba(255, 255, 255, 0));
+  pointer-events: none;
+}
+
+/*
+ * The plane: from a soft, bright horizon down into a pale lavender, with a
+ * few very faint lines in perspective (close near the horizon, wider apart
+ * below), like still shallow water. It runs the full width of the window
+ * and fades out before the page ends.
+ */
+.portal-plane {
+  position: absolute;
+  top: 55%;
+  bottom: -14%;
+  left: calc(50% - 50vw);
+  width: 100vw;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.7) 7%, rgba(250, 248, 255, 0.35) 16%, rgba(214, 205, 238, 0.22) 55%, rgba(214, 205, 238, 0) 100%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000 420' preserveAspectRatio='none'%3E%3Cg fill='%23fff'%3E%3Crect x='0' width='1000' y='2.1' height='0.8' fill-opacity='0.40'/%3E%3Crect x='0' width='1000' y='8.6' height='0.8' fill-opacity='0.38'/%3E%3Crect x='0' width='1000' y='19.3' height='0.8' fill-opacity='0.36'/%3E%3Crect x='0' width='1000' y='34.3' height='0.8' fill-opacity='0.35'/%3E%3Crect x='0' width='1000' y='53.6' height='0.8' fill-opacity='0.33'/%3E%3Crect x='0' width='1000' y='77.1' height='0.8' fill-opacity='0.31'/%3E%3Crect x='0' width='1000' y='105.0' height='0.8' fill-opacity='0.29'/%3E%3Crect x='0' width='1000' y='137.1' height='0.8' fill-opacity='0.27'/%3E%3Crect x='0' width='1000' y='173.6' height='0.8' fill-opacity='0.25'/%3E%3Crect x='0' width='1000' y='214.3' height='0.8' fill-opacity='0.23'/%3E%3Crect x='0' width='1000' y='259.3' height='0.8' fill-opacity='0.22'/%3E%3Crect x='0' width='1000' y='308.6' height='0.8' fill-opacity='0.20'/%3E%3Crect x='0' width='1000' y='362.1' height='0.8' fill-opacity='0.18'/%3E%3Crect x='0' width='1000' y='420.0' height='0.8' fill-opacity='0.16'/%3E%3C/g%3E%3C/svg%3E") 0 0 / 100% 100% no-repeat;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 22%, #000 78%, transparent 100%), linear-gradient(180deg, transparent 0%, #000 8%, #000 60%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 22%, #000 78%, transparent 100%), linear-gradient(180deg, transparent 0%, #000 8%, #000 60%, transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+}
+
+/*
+ * Residue in moving air (PortalAir.jsx), through the lower space: from a
+ * little above the horizon down over the plane, the full width of the
+ * window, behind the specimens, its edges dissolving.
+ */
+.portal-residue {
+  position: absolute;
+  top: 34%;
+  left: calc(50% - 50vw);
+  width: 100vw;
+  height: 64%;
+  pointer-events: none;
+  filter: blur(2px);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 12%, #000 88%, transparent 100%), linear-gradient(180deg, transparent 0%, #000 18%, #000 72%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 12%, #000 88%, transparent 100%), linear-gradient(180deg, transparent 0%, #000 18%, #000 72%, transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+}
+
+/* --- the specimens ------------------------------------------------------------ */
+
+/* The link is the image's own box; its label hangs beside it (still part of the link). */
+.portal-specimen {
+  position: absolute;
+  z-index: 1;
+  display: block;
+  text-decoration: none;
+  transform: translate3d(calc(var(--mx) * var(--depth) * -9px), calc(var(--my) * var(--depth) * -6px), 0);
+  transition: transform 1.6s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.specimen-body {
+  position: relative;
+  z-index: 1;
+  display: block;
+  animation: specimen-float 18s ease-in-out infinite alternate;
+  animation-delay: var(--phase);
+}
+
+/* What rests on the plane barely moves. */
+.portal-specimen.is-grounded .specimen-body {
+  animation-name: specimen-settle;
+}
+
+@keyframes specimen-float {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes specimen-settle {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-1.5px);
+  }
+}
+
+/* One light for all five: a touch softer, a touch paler. */
+.specimen-art {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+  filter: saturate(0.9) brightness(1.02);
+  transition:
+    transform 1.2s cubic-bezier(0.2, 0.7, 0.2, 1),
+    filter 900ms ease,
+    opacity 900ms ease;
+}
+
+/* The two floating further back sit a little deeper in the air. */
+.specimen-for-world .specimen-art,
+.specimen-for-matter-exchange .specimen-art {
+  filter: saturate(0.86) brightness(1.04) contrast(0.96);
+}
+
+/* Resting on the plane: a soft darkening where it meets it, and a faint reflection below. */
+.specimen-contact {
+  position: absolute;
+  left: 14%;
+  bottom: -1.5%;
+  width: 72%;
+  height: 7%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(74, 64, 128, 0.18), rgba(74, 64, 128, 0));
+  pointer-events: none;
+}
+
+.specimen-reflection {
+  position: absolute;
+  top: 99%;
+  left: 0;
+  display: block;
+  width: 100%;
+  height: auto;
+  transform: scaleY(-1);
+  opacity: 0.32;
+  filter: blur(1.5px) saturate(0.85);
+  pointer-events: none;
+  user-select: none;
+  -webkit-mask-image: linear-gradient(0deg, #000 0%, rgba(0, 0, 0, 0.5) 18%, transparent 46%);
+  mask-image: linear-gradient(0deg, #000 0%, rgba(0, 0, 0, 0.5) 18%, transparent 46%);
+}
+
+/* --- labels ------------------------------------------------------------- */
+
+.portal-label {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  width: max-content;
+  max-width: 15cqw;
+  color: var(--ink);
+}
+
+.label-below .portal-label {
+  top: calc(100% + 0.4rem);
+  left: 8%;
+}
+
+/* Within the image's own empty upper left, set against its stem. */
+.label-inside .portal-label {
+  top: 3%;
+  right: 59%;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.label-above .portal-label {
+  bottom: calc(100% + 0.6rem);
+  left: 6%;
+}
+
+.label-right .portal-label {
+  top: 24%;
+  left: calc(100% + 1rem);
+}
+
+.portal-number {
+  font-family: var(--sans);
+  font-size: 0.64rem;
+  letter-spacing: 0.24em;
+  color: var(--ink-3);
+}
+
+.portal-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  font-size: clamp(1.15rem, 1.75cqw, 2rem);
+  font-weight: 300;
+  line-height: 1.05;
+  white-space: nowrap;
+  color: var(--ink);
+  transition: color 700ms ease;
+}
+
+.portal-cue {
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  color: var(--violet);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    opacity 700ms ease,
+    transform 700ms ease;
+}
+
+/* The one line: kept in place (so nothing shifts), shown on hover or focus. */
+.portal-text {
+  margin-top: 0.25rem;
+  font-size: clamp(0.88rem, 1.02cqw, 1.02rem);
+  line-height: 1.35;
+  color: var(--ink-2);
+  opacity: 0;
+  transform: translateY(-3px);
+  transition:
+    opacity 700ms ease,
+    transform 700ms ease;
+}
+
+/* --- hover and focus ---------------------------------------------------------- */
+
+.portal-specimen:hover .specimen-art,
+.portal-specimen:focus-visible .specimen-art {
+  transform: translateY(-4px) scale(1.015);
+  filter: saturate(1.02) brightness(1.04);
+}
+
+.portal-specimen:hover .portal-title,
+.portal-specimen:focus-visible .portal-title {
+  color: var(--violet);
+}
+
+.portal-specimen:hover .portal-cue,
+.portal-specimen:focus-visible .portal-cue,
+.portal-specimen:hover .portal-text,
+.portal-specimen:focus-visible .portal-text {
+  opacity: 1;
+  transform: none;
+}
+
+/* While one is attended to, the others recede a little. */
+.portal-stage:has(.portal-specimen:hover, .portal-specimen:focus-visible) .portal-specimen:not(:hover):not(:focus-visible) .specimen-art {
+  opacity: 0.72;
+}
+
+.portal-specimen:focus-visible {
+  outline: none;
+}
+
+.portal-specimen:focus-visible .portal-title {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.3em;
+}
+
+/* Where nothing hovers (touch screens), the one line is always shown. */
+@media (hover: none) {
+  .portal-text {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* --- the note on what the images are --------------------------------------- */
+
+.portal-provenance {
+  position: relative;
+  margin: 0.8rem 0 0;
+  padding: 0 var(--gutter);
+  font-family: var(--sans);
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  text-align: center;
+  color: var(--ink-3);
+}
+
+/* --- narrow screens: one column ----------------------------------------------- */
+
+@media (max-width: 900px) {
+  .portal-intro {
+    text-align: left;
+  }
+
+  .portal-stage {
+    display: flex;
+    flex-direction: column;
+    gap: 3rem;
+    width: 100%;
+    aspect-ratio: auto;
+    margin-top: 2.4rem;
+    container-type: normal;
+  }
+
+  .portal-light,
+  .portal-plane,
+  .portal-residue,
+  .specimen-contact,
+  .specimen-reflection {
+    display: none;
+  }
+
+  .portal-specimen {
+    position: static;
+    width: auto !important;
+    transform: none;
+  }
+
+  .specimen-body {
+    width: min(78%, 26rem);
+  }
+
+  .specimen-for-life-cycles .specimen-body {
+    width: min(58%, 17rem);
+  }
+
+  .specimen-for-field-notes .specimen-body,
+  .specimen-for-fragments .specimen-body {
+    width: min(62%, 20rem);
+  }
+
+  .portal-label,
+  .label-inside .portal-label {
+    position: static;
+    align-items: flex-start;
+    width: auto;
+    max-width: 24rem;
+    margin-top: 0.8rem;
+    text-align: left;
+  }
+
+  .portal-title {
+    font-size: 1.7rem;
+    white-space: normal;
+  }
+
+  .portal-text {
+    font-size: 1rem;
+    opacity: 1;
+    transform: none;
+  }
+
+  .portal-provenance {
+    margin-top: 2.6rem;
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .portal-specimen,
+  .portal-mist {
+    transform: none;
+  }
+}

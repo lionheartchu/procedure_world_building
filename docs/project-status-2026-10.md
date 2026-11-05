@@ -57,6 +57,23 @@ Nothing flows back. Colonies do not add to the record, their residue does
 not change the next colony's placement, and the air deposits nothing. The
 world shows the result of a history; it does not yet keep making one.
 
+*(Update, 15 October:* a bounded experiment behind a development flag now
+closes the loop for one membrane of one colony; see
+[study 10](10-lifecycle-concept.md#prototype-15-october-2026). Explore as
+shown is unchanged.*)*
+
+*(Update, 17 October:* it is now a stages 0–2 demo on one patch of one
+colony. Staggered residents release matter that settles as visible residue,
+and new residents form on it and take it up; see
+[study 10](10-lifecycle-concept.md#stages-02-demo-17-october-2026). Still
+behind the flag.*)*
+
+*(Update, 24 October:* paused. Stages 0–2 are a bounded demo. A shared
+tissue between colonies (`&conduit=1`), with its fold and greybox studies,
+is unfinished and paused. Feedback to residents, an emergent core and a
+history kept between sessions are proposed, not implemented. Explore is
+unchanged.*)*
+
 ### How the concept has evolved
 
 - **From storm to sediment.** The repository began as *Nimbus*, a storm
@@ -181,6 +198,7 @@ This is the distinction most easily overstated.
 | Accumulation light | **Computed once per placement** | 200 diffusion steps over the record; read by the ground, the tissue and the forms |
 | The air | **Evolves in real time** (stateful) | 16,384 GPU particles advected each frame by a procedural flow field; colonies bend and slow it. The one continuously evolving system in Explore. It writes nothing back |
 | Water, tide, ripples, breathing membranes | **Time-driven animation** | Cyclic shader motion, not state |
+| Lifecycle (study 10, dev flag only) | **Evolves in real time** (stateful, seeded) | Staggered residents of one patch lie down and release films; the air carries them; a live residual records and shows what settles; new residents form on it and take it up. Off by default |
 
 So Explore shows a **world recomputed from parameters and a precomputed
 history**. It is animated and its air is alive, but its ecology does not
@@ -442,7 +460,8 @@ In rough priority order:
 
 - **Feedback:** colonies adding to the record, so placement in a second
   generation reads the first one's residue. This is the step from "a world
-  that shows a history" to "a world that keeps making one".
+  that shows a history" to "a world that keeps making one". Demonstrated
+  for one patch in study 10 (stages 0–2), under review.
 - **Decay:** colonies that thin, collapse into residue and seed what follows.
 - **A live history in Explore:** the record and the colonies developing over
   minutes rather than being recomputed.

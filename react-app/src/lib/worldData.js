@@ -45,8 +45,10 @@ const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v)
  * @returns {{ sim: SedimentSim, flow: Float32Array }} the sim holds sediment
  *   and activity exactly as the terrain shader expects to read them.
  */
-export function runHistory(field, simParams, waterLevel, seconds) {
-  const sim = new SedimentSim()
+export function runHistory(field, simParams, waterLevel, seconds, { res } = {}) {
+  // `res`: a finer grid for a wider world (the Habitat's D), so a cell
+  // stays about as wide as on the 26-unit slab; SIM_RES otherwise.
+  const sim = new SedimentSim(res)
   sim.setHeight(buildCellGrid(field, sim.res))
 
   const n = sim.res * sim.res

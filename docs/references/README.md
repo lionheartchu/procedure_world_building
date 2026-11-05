@@ -24,7 +24,7 @@ geometry or a palette to copy.
 Kept for study. Credits are given as far as they are known; where an artist
 or a source was not recorded, none is given.
 
-### Sabrina Ratté — *Plane of Incidence* · primary visual inspiration
+### Sabrina Ratté — *Plane of Incidence* (2024) · primary visual inspiration
 
 | Accumulated structures | Ambiguous materiality | Form and surroundings |
 |---|---|---|
@@ -37,24 +37,42 @@ or a source was not recorded, none is given.
 
 ### *Journey* and *ABZÛ* · atmosphere
 
-| *Journey* | *ABZÛ* | *ABZÛ* |
-|---|---|---|
+| *Journey*                    | *ABZÛ*                     | *ABZÛ*                     |
+| ---------------------------- | -------------------------- | -------------------------- |
 | ![Journey\|210](journey.jpg) | ![ABZÛ 1\|210](abzu1.jpeg) | ![ABZÛ 2\|210](abzu2.webp) |
 
-*Journey* by thatgamecompany; *ABZÛ* by Giant Squid.
+*Journey* by thatgamecompany (2012); *ABZÛ* by Giant Squid (2016).
 
 - **Dreamlike light and luminous colour.**
 - **Immersive environments** with spatial depth and a sense of wonder.
 - **For atmosphere only.** Not references for morphology, and their blues
   and turquoise are not the project's palette.
+- **Later, *ABZÛ* for moving through a place** at its own scale: the
+  first-person presence of [study 11](../11-presence-study.md).
 
-### *The Ephemeral Lake* · secondary conceptual and spatial reference
+### Jakob Kudsk Steensen — *The Ephemeral Lake* (2024) · secondary conceptual and spatial reference
 
 ![The Ephemeral Lake|480](The%20Ephemeral%20Lake.webp)
 
 - **Traces of time:** transformation and impermanence.
 - **A form and its environment**, read together.
 - **Not the primary visual target.**
+
+### Philip Beesley — *Hylozoic Ground* (2010) · responsive environment
+
+Canada Pavilion, Venice Architecture Biennale. **No image is kept here.**
+
+- **An environment that senses visitors and responds** through many small,
+  distributed elements.
+- **For phase B of [study 11](../11-presence-study.md)**: one membrane
+  yielding to a visitor nearby while its own cycle continues. The world
+  should notice a visitor without centring on them.
+
+### Biological research
+
+Mycelial networks and *Turritopsis dohrnii*, as mechanisms rather than
+images: in [study 10](../10-lifecycle-concept.md#biological-references-mechanisms-not-visual-instructions),
+with sources and what is not inferred from them.
 
 ## B. AI-generated concept studies
 

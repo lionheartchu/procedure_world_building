@@ -224,7 +224,129 @@ function List({ block }) {
   )
 }
 
-const BLOCKS = { chain: Chain, cycle: Cycle, stages: Stages, evidence: Evidence, status: Status, studies: Studies, collection: Collection, list: List }
+/**
+ * External works, two to a row as in a collection: each with what it is,
+ * who made it, what was seen in it and what was taken. A work the project
+ * keeps no image of says so in place of the image.
+ */
+function Precedents({ block }) {
+  return (
+    <section className="block block-precedents">
+      <Head title={block.title} />
+      {block.note && <p className="block-lede">{block.note}</p>}
+      <div className="precedents">
+        {block.items.map((item) => {
+          const asset = item.asset ? ASSETS[item.asset] : null
+          return (
+            <figure key={item.title} className="atlas-figure precedent">
+              {asset ? <Picture asset={asset} ratio={16 / 9} /> : <span className="precedent-empty">No image kept in the project</span>}
+              <figcaption>
+                <span className="atlas-kind kind-external">{KINDS.external}</span>
+                <span className="precedent-name">
+                  <cite>{item.title}</cite> · {item.by}, {item.year}
+                  {item.where && <span className="precedent-where">, {item.where}</span>}
+                </span>
+              </figcaption>
+              <dl className="precedent-notes">
+                <dt>Observed</dt>
+                <dd>{item.saw}</dd>
+                <dt>Translated</dt>
+                <dd>{item.took}</dd>
+              </dl>
+            </figure>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+/** Research studied for its mechanism: what it is, what was borrowed, what was not. */
+function Research({ block }) {
+  return (
+    <section className="block block-research">
+      <Head title={block.title} />
+      {block.note && <p className="block-lede">{block.note}</p>}
+      <div className="research">
+        {block.items.map((item) => (
+          <article key={item.title} className="research-item">
+            <h3>
+              {item.binomial ? <i>{item.title}</i> : item.title}
+              {item.aside && <span className="research-aside"> · {item.aside}</span>}
+            </h3>
+            <p className="research-basis">{item.basis}</p>
+            <dl className="precedent-notes">
+              <dt>Borrowed</dt>
+              <dd>{item.borrowed}</dd>
+              <dt>Not claimed</dt>
+              <dd>{item.limit}</dd>
+            </dl>
+            <DocRef doc={item.doc} />
+          </article>
+        ))}
+      </div>
+      {block.sources && (
+        <p className="research-sources">
+          <span className="research-sources-label">Sources</span>
+          {block.sources.map((s) => (
+            <a key={s.url} className="atlas-docref" href={s.url} target="_blank" rel="noreferrer">
+              {s.label}
+            </a>
+          ))}
+        </p>
+      )}
+    </section>
+  )
+}
+
+/** Reference → observed principle → design translation → how far it has got, one row each. */
+function Translation({ block }) {
+  return (
+    <section className="block block-translation">
+      <Head title={block.title} />
+      {block.note && <p className="block-lede">{block.note}</p>}
+      <ol className="translation">
+        <li className="translation-head" aria-hidden="true">
+          <span>Reference</span>
+          <span>Observed principle</span>
+          <span>Design translation</span>
+          <span>Status</span>
+        </li>
+        {block.items.map((item) => (
+          <li key={item.reference}>
+            <cite className={`translation-reference${item.plain ? ' is-plain' : ''}`}>{item.reference}</cite>
+            <span className="translation-principle" data-label="Observed">
+              {item.principle}
+            </span>
+            <span className="translation-design" data-label="Became">
+              {item.translation}
+            </span>
+            <span className="translation-status">
+              <span className={`status-state state-${item.state.toLowerCase().replace(/[^a-z]+/g, '-')}`}>{item.state}</span>
+              <span className="status-note">
+                {item.note} · <DocRef doc={item.doc} />
+              </span>
+            </span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
+}
+
+const BLOCKS = {
+  chain: Chain,
+  cycle: Cycle,
+  stages: Stages,
+  evidence: Evidence,
+  status: Status,
+  studies: Studies,
+  collection: Collection,
+  list: List,
+  precedents: Precedents,
+  research: Research,
+  translation: Translation,
+}
 
 export default function Chapter({ chapter }) {
   const at = CHAPTERS.indexOf(chapter)

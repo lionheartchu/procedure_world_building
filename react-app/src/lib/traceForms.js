@@ -471,7 +471,7 @@ const ANCHOR_SHAPE = { ...BLOOM_SHAPE, crest: [0.5, 0.75], lean: [72, 80], peel:
  */
 export const bloomSurfaces = new WeakMap()
 
-function buildBlooms(instances, world, ribs) {
+export function buildBlooms(instances, world, ribs) {
   const solid = new FormWriter()
   const film = new FormWriter()
   const deg = (v) => (v * Math.PI) / 180

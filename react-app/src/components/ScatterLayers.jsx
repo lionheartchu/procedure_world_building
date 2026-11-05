@@ -4,6 +4,7 @@ import { buildScatterGeometry, buildStreamDebug } from '../lib/traceForms'
 import { createFormMaterial, setAccumulation } from '../lib/formMaterial'
 import { buildBranchingGeometry, growBranching } from '../lib/branching'
 import BranchNetwork from './BranchNetwork'
+import LifecycleLayer from './LifecycleLayer'
 
 /** Seconds a full Grow takes. Everything moves; nothing moves fast. */
 const GROW_SECONDS = 42
@@ -43,16 +44,69 @@ const BEAD_GLOW = 0.5
 /** The streams' splines, drawn only when asked for in the URL. */
 const DEBUG_STREAMS = typeof window !== 'undefined' && /debug=streams/.test(window.location.search)
 
+/** The bloom layer's two materials: the lifecycle's resident (and the Habitat's encounter) is drawn in them. */
+export const RESIDENT_MESHES = MESHES.filter((m) => m.layer === 'bloom')
+
+/** Nothing withheld (a stable default, so the geometry is not rebuilt each render). */
+const NONE = []
+
+/** The placement without some membranes (the lifecycle's residents, drawn on their own). */
+function withoutResidents(scatter, residents) {
+  const bloom = scatter.layers.bloom
+  return { ...scatter, layers: { ...scatter.layers, bloom: { ...bloom, instances: bloom.instances.filter((i) => !residents.includes(i)) } } }
+}
+
 /** What a mesh shows in each view. */
 function shows(layer, view) {
   if (layer === 'spline') return DEBUG_STREAMS
   return view === 'all' || view === layer || SHARED.has(layer)
 }
 
-export default function ScatterLayers({ world, scatter, accumulation, streams, params, growing, onGrowth, onGrowthEnd }) {
-  const materials = useMemo(() => MESHES.map((m) => createFormMaterial(m)), [])
+/**
+ * The Habitat passes three more things (Explore and the studies pass none):
+ * several lifecycles (`lifecycles`, each its own patch), membranes it draws
+ * itself (`withhold`, the encounter), and material options for first person
+ * (`formOptions`, e.g. the near-camera fade). `frame: false` keeps a
+ * lifecycle from moving the camera to its patch; `carriers` shows the
+ * matter its films carry; `residue` adds residue no colony holds (drawn
+ * with the colonies' own, lib/scatter.js strayResidue).
+ */
+export default function ScatterLayers({
+  world,
+  scatter,
+  accumulation,
+  streams,
+  params,
+  growing,
+  onGrowth,
+  onGrowthEnd,
+  lifecycle = null,
+  lifecycles = null,
+  withhold = NONE,
+  formOptions = null,
+  frame = true,
+  carriers = false,
+  residue = NONE,
+  // Many lifecycles (the Habitat's D): their deposits culled off screen.
+  cullLives = false,
+  // The Habitat's D1: the lifecycles' passage drawn to be read from eye
+  // height (LifecycleLayer `legible`).
+  legible = false,
+}) {
+  const materials = useMemo(() => MESHES.map((m) => createFormMaterial({ ...m, ...formOptions })), [formOptions])
+  const residentMeshes = useMemo(() => (formOptions ? RESIDENT_MESHES.map((m) => ({ ...m, ...formOptions })) : RESIDENT_MESHES), [formOptions])
 
-  const geometry = useMemo(() => buildScatterGeometry(scatter, world), [scatter, world])
+  // Study 10 (?lifecycle=1 only): the lifecycle's residents leave the
+  // colony's merged geometry and are drawn by LifecycleLayer instead.
+  const lives = useMemo(() => (lifecycles ?? (lifecycle ? [lifecycle] : NONE)).filter((l) => l?.active), [lifecycles, lifecycle])
+  const placed = useMemo(() => {
+    const apart = [...withhold, ...lives.flatMap((l) => l.first)]
+    const kept = apart.length ? withoutResidents(scatter, apart) : scatter
+    if (!residue.length) return kept
+    const shard = kept.layers.shard
+    return { ...kept, layers: { ...kept.layers, shard: { ...shard, instances: [...shard.instances, ...residue] } } }
+  }, [scatter, lives, withhold, residue])
+  const geometry = useMemo(() => buildScatterGeometry(placed, world), [placed, world])
   // The branching network grows from what the colony placed (and from the
   // membrane surfaces the geometry just built). Structure, so Bridgework's
   // Amount sets how much grows; Accumulation how far it runs down the
@@ -145,6 +199,24 @@ export default function ScatterLayers({ world, scatter, accumulation, streams, p
   return (
     <group>
       <BranchNetwork networks={networks} growth={growth} waterY={waterLine} visible={params.view === 'all' || params.view === 'bridgework'} />
+      {lives.map((life, k) => (
+        <LifecycleLayer
+          key={k}
+          lifecycle={life}
+          frame={frame}
+          carriers={carriers}
+          world={world}
+          meshes={residentMeshes}
+          growth={growth}
+          waterLine={waterLine}
+          openness={params.bloomOpenness}
+          accumulation={accumulation}
+          visible={shows('bloom', params.view)}
+          cull={cullLives}
+          legible={legible}
+          light={formOptions?.light ?? null}
+        />
+      ))}
       {MESHES.map((m, k) => {
         const geo = (m.layer === 'spline' ? debugGeometry : geometry[m.layer])?.[m.part]
         if (!geo) return null
