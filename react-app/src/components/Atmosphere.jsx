@@ -66,17 +66,29 @@ function Motes({ spread, lift }) {
 }
 
 /** Inverted gradient shell: a quiet horizon the terrain can fade into. */
-function Sky() {
+function Sky({ colours = null }) {
   const material = useMemo(
     () =>
       new THREE.ShaderMaterial({
+        // `encode`: written in the output colour space, as every other
+        // material here is. Without it (as in Explore) the dome shows its
+        // colours' linear values, about three times darker than authored.
+        // `mid` (the Habitat's D): three stops, horizon → mid → zenith, and
+        // a faint `glow` toward `glowDir` along the horizon.
+        defines: { ...(colours?.encode ? { ENCODE: '' } : {}), ...(colours?.mid ? { THREE_STOP: '' } : {}) },
         side: THREE.BackSide,
         depthWrite: false,
         depthTest: false,
         fog: false,
         uniforms: {
-          uHorizon: { value: new THREE.Color('#3B3F70') },
-          uZenith: { value: new THREE.Color('#0C0F26') },
+          uHorizon: { value: new THREE.Color(colours?.horizon ?? '#3B3F70') },
+          uZenith: { value: new THREE.Color(colours?.zenith ?? '#0C0F26') },
+          uMid: { value: new THREE.Color(colours?.mid ?? '#000000') },
+          uGlow: { value: new THREE.Color(colours?.glow ?? '#000000') },
+          uGlowDir: { value: new THREE.Vector3(...(colours?.glowDir ?? [0, 0, -1])).normalize() },
+          // How much of the glow is added (1 as authored; D1 less, so the
+          // horizon on the light's side does not clip to white).
+          uGlowGain: { value: colours?.glowGain ?? 1 },
         },
         vertexShader: `
           varying vec3 vWorld;
@@ -88,20 +100,38 @@ function Sky() {
         fragmentShader: `
           uniform vec3 uHorizon;
           uniform vec3 uZenith;
+          uniform vec3 uMid;
+          uniform vec3 uGlow;
+          uniform vec3 uGlowDir;
+          uniform float uGlowGain;
           varying vec3 vWorld;
           void main() {
             // View direction, so the haze band sits on the true horizon
             // rather than on the dome's equator.
-            float y = normalize(vWorld - cameraPosition).y;
+            vec3 dir = normalize(vWorld - cameraPosition);
+            float y = dir.y;
+            #ifdef THREE_STOP
+            // A pale band at the horizon, a lighter middle, a deeper top;
+            // the glow lies along the horizon toward one side.
+            float h = max(y, 0.0);
+            vec3 sky = mix(uHorizon, uMid, smoothstep(0.0, 0.28, h));
+            sky = mix(sky, uZenith, smoothstep(0.2, 0.8, h));
+            float toward = max(dot(normalize(vec3(dir.x, 0.0, dir.z)), normalize(vec3(uGlowDir.x, 0.0, uGlowDir.z))), 0.0);
+            sky += uGlow * uGlowGain * (pow(toward, 6.0) * 0.6 + pow(toward, 2.0) * 0.25) * (1.0 - smoothstep(0.0, 0.35, h));
+            #else
             float t = smoothstep(-0.02, 0.5, y);
             vec3 sky = mix(uHorizon, uZenith, t);
             // A little extra lift right along the horizon line.
             sky += uHorizon * 0.4 * (1.0 - smoothstep(0.0, 0.12, abs(y)));
+            #endif
             gl_FragColor = vec4(sky, 1.0);
+            #ifdef ENCODE
+            #include <colorspace_fragment>
+            #endif
           }
         `,
       }),
-    [],
+    [colours],
   )
 
   return (
@@ -116,10 +146,11 @@ function Sky() {
  * the view is looking at — the 26-unit terrain field or the much smaller
  * sediment volume — so they read as suspended material at either scale.
  */
-export default function Atmosphere({ spread = FIELD_SIZE * 1.5, lift = 4.5, motes = true }) {
+/** `sky`: the dome's { horizon, zenith } (the Habitat's `look=soft` comparison); its own otherwise. */
+export default function Atmosphere({ spread = FIELD_SIZE * 1.5, lift = 4.5, motes = true, sky = null }) {
   return (
     <>
-      <Sky />
+      <Sky colours={sky} />
       {motes && <Motes spread={spread} lift={lift} />}
     </>
   )

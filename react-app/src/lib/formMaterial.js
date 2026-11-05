@@ -117,6 +117,27 @@ const VERTEX = /* glsl */ `
   uniform float uRecline;
   uniform vec3 uBase;
   uniform vec2 uLean;
+  #ifdef WIND
+  // The Habitat's D1 (lifecycle residents): bent by the air their films
+  // ride (its displacement at the crest, units), from the foot up.
+  uniform vec4 uWind;
+  #endif
+  #ifdef RELEASE
+  // D1: where this resident's films came away, as it stood before it lay
+  // down (so the marks lie with it).
+  varying vec3 vRest;
+  #endif
+  #ifdef ENCOUNTER
+  // The Habitat's encounter (lib/encounter.js): one membrane's dent. Its
+  // displacement at the centre, the centre and radius, and the foot it is
+  // held at (height, span), its height and how far it leans with the dent.
+  // The weight is Membrane.weightAt's.
+  uniform vec3 uDent;
+  uniform vec4 uDentAt;
+  uniform vec4 uDentFoot;
+  // How stretched the sheet is here (0..1): pressed in, it thins.
+  varying float vStretch;
+  #endif
 
   varying vec3 vWorld;
   varying vec3 vNormal;
@@ -152,6 +173,9 @@ const VERTEX = /* glsl */ `
     vFold = aFold;
     #endif
     vec3 nrm = normal;
+    #ifdef RELEASE
+    vRest = p;
+    #endif
     if (uRecline > 0.0) {
       // It folds over toward its lean about its base: its height goes into
       // its length, until it lies low on the ground as its own outline.
@@ -162,11 +186,35 @@ const VERTEX = /* glsl */ `
       p = uBase + q;
       nrm = normalize(mix(normal, vec3(0.0, 1.0, 0.0), 0.8 * uRecline));
     }
+    #ifdef ENCOUNTER
+    {
+      vec3 dd = position - uDentAt.xyz;
+      float R2 = uDentAt.w * uDentAt.w;
+      float local = exp(-dot(dd, dd) / R2);
+      float lean = uDentFoot.w * smoothstep(uDentFoot.x, uDentFoot.x + uDentFoot.z, position.y);
+      float wd = min(1.0, local + lean) * smoothstep(uDentFoot.x, uDentFoot.x + uDentFoot.y, position.y);
+      p += uDent * wd;
+      vStretch = local * clamp(length(uDent) / 0.2, 0.0, 1.0);
+      // The surface's normal tilts with the dent's slope, so its light follows.
+      vec3 grad = -2.0 * dd / R2 * local * smoothstep(uDentFoot.x, uDentFoot.x + uDentFoot.y, position.y);
+      vec3 along = grad - nrm * dot(grad, nrm);
+      nrm = normalize(nrm - dot(uDent, nrm) * along);
+    }
+    #endif
     // Height above the part's foot: how far light from the ground reaches.
     vAbove = p.y - aAnchor.y;
 
     vPhase = aAnchor.x * 0.23 + aAnchor.z * 0.17;
+    #ifdef WIND
+    {
+      // A sheet bends from its foot: the displacement grows with the square
+      // of the height above it, to the crest (uWind.w, its height).
+      float hb = clamp((p.y - uBase.y) / max(uWind.w, 0.05), 0.0, 1.4);
+      p += uWind.xyz * hb * hb;
+    }
+    #else
     p += vec3(0.6, 0.1, 0.45) * sin(uTime * 0.19 + vPhase) * aSway * 0.045;
+    #endif
 
     vec4 world = modelMatrix * vec4(p, 1.0);
     vWorld = world.xyz;
@@ -346,6 +394,33 @@ const FILM_FRAGMENT = /* glsl */ `
   uniform float uFade;
   uniform float uSpecular;
   uniform float uFlow;
+  // How strongly the closed sheet's thin spots show (1 everywhere but the
+  // Habitat's look=soft comparison, docs/15-habitat-c-visual.md).
+  uniform float uSpots;
+  #ifdef ENCOUNTER
+  varying float vStretch;
+  #endif
+  #ifdef STAIN
+  // The Habitat's M1: the cue a resident has gathered from the air (a
+  // signal, not matter), as a cool stain in its film: colour, and how much.
+  uniform vec4 uStain;
+  #endif
+  #ifdef RELEASE
+  // D1: where each of its films came away (across its width from the foot,
+  // height above the foot, radius, how far it has come away: 0..1), and
+  // the direction across it. The sheet is thinner there, opening where
+  // most has gone: that much of its body has left.
+  uniform vec4 uLeft[4];
+  uniform vec2 uAcross;
+  uniform vec3 uBase;
+  varying vec3 vRest;
+  #endif
+  #ifdef NEAR_FADE
+  // The Habitat (first person): the back-lit rim light and the fold light
+  // fade near the camera (from x to y units), where a curving sheet would
+  // flare white and show its facets (docs/11-presence-study.md).
+  uniform vec2 uNearFade;
+  #endif
 
   #include <common>
   #include <fog_pars_fragment>
@@ -383,10 +458,23 @@ const FILM_FRAGMENT = /* glsl */ `
     // large anchor sheets every cell open read as dense dark spotting.
     float opens = step(w.y, 0.5 + 0.4 * lace) * step(0.001, lace);
     float r = mix(0.12, 0.42, lace) * (0.55 + 0.45 * fract(w.y * 7.31)) * opens * margin;
+    #ifdef RELEASE
+    float gone = 0.0;
+    for (int k = 0; k < 4; k++) {
+      vec4 L = uLeft[k];
+      if (L.w <= 0.0) continue;
+      vec2 d = vec2(dot(vRest.xz - uBase.xz, uAcross) - L.x, vRest.y - uBase.y - L.y) / L.z;
+      gone = max(gone, L.w * exp(-dot(d, d)));
+    }
+    // Where it left, the sheet opens into fine lace (small, many, uneven:
+    // never one hole, which reads as an eye), most at the mark's middle.
+    vec2 wl = worley(vec2(vUv.x, vUv.y * 0.62) * 17.0);
+    if (wl.x < 0.3 * smoothstep(0.45, 1.0, gone) * step(wl.y, 0.6) * (0.5 + 0.5 * fract(wl.y * 5.17)) * margin) discard;
+    #endif
     if (w.x < r) discard;
     float lip = r > 0.0 ? (1.0 - smoothstep(r, r + 0.05, w.x)) * smoothstep(0.12, 0.3, r) : 0.0;
     // Thin spots: the closed membrane's pores, lighter rather than dark.
-    float thinSpot = (1.0 - smoothstep(0.08, 0.16, w.x)) * step(w.y, 0.7) * (1.0 - lace) * step(0.001, vLook.w) * margin;
+    float thinSpot = (1.0 - smoothstep(0.08, 0.16, w.x)) * step(w.y, 0.7) * (1.0 - lace) * step(0.001, vLook.w) * margin * uSpots;
 
     vec3 n = normalize(vNormal);
     if (!gl_FrontFacing) n = -n;
@@ -401,6 +489,10 @@ const FILM_FRAGMENT = /* glsl */ `
     vec3 lit = tint * (ambient * 0.8 + uLightColor * wrap * 0.6);
 
     float toward = pow(clamp(dot(v, -uLightDir), 0.0, 1.0), 1.5);
+    #ifdef NEAR_FADE
+    float nearK = smoothstep(uNearFade.x, uNearFade.y, length(cameraPosition - vWorld));
+    toward *= nearK;
+    #endif
     float edge = 1.0 - smoothstep(0.0, 0.35, vEdge);
     vec3 emit = uBright * (fres * (0.14 + 0.36 * toward) + lip * 0.16 + edge * uEdgeGlow + thinSpot * 0.05);
     // Light held inside the sheet, strongest face-on, so a membrane glows
@@ -434,6 +526,9 @@ const FILM_FRAGMENT = /* glsl */ `
     float rise = acc.r * exp(-max(vAbove, 0.0) / 0.6);
     float curve = length(fwidth(n)) / max(length(fwidth(vWorld)), 1e-4);
     float fold = smoothstep(2.5, 8.0, curve) * presence;
+    #ifdef NEAR_FADE
+    fold *= nearK;
+    #endif
     #ifdef CONDUIT_FOLD
     // The fold's lofted mesh shows this per-triangle measure as facets; its
     // roll is lit along its lip instead (aEdge).
@@ -467,11 +562,32 @@ const FILM_FRAGMENT = /* glsl */ `
     emit = warmed(emit, gb) + uWarmTint * gb * uGrow.z;
     #endif
     float alpha = vLook.z * (0.45 + 0.75 * fres) + (lip * 0.2 + spec * uSpecular * 0.5) * presence + edge * uEdgeGlow * 1.3 + flow * 0.35;
+    #ifdef RELEASE
+    // Thinner where its films have come away.
+    alpha *= 1.0 - 0.55 * gone;
+    #endif
     #ifdef WARM
     alpha += gb * uGrow.w;
     #endif
     #ifdef CONDUIT_FOLD
     alpha += speck * 0.7;
+    #endif
+    #ifdef ENCOUNTER
+    // Pressed, the sheet stretches thin: clearer, and a little lighter in its own colour.
+    alpha *= 1.0 - 0.45 * vStretch;
+    emit += uTint * 0.22 * vStretch;
+    #endif
+
+    #ifdef STAIN
+    // Toward the cue's own colour at the sheet's brightness, strongest low
+    // down where the air reaches it first.
+    {
+      float k = uStain.w * (0.55 + 0.45 * exp(-max(vAbove, 0.0) / 0.5)) * presence;
+      float lum = dot(lit + emit, vec3(0.3, 0.5, 0.2));
+      vec3 hue = uStain.rgb * (lum / max(dot(uStain.rgb, vec3(0.3, 0.5, 0.2)), 1e-3));
+      lit = mix(lit, hue * 0.8, k);
+      emit = mix(emit, hue * 0.2, k * 0.6);
+    }
     #endif
 
     float under = smoothstep(0.0, 0.25, uWaterY - vWorld.y);
@@ -483,7 +599,8 @@ const FILM_FRAGMENT = /* glsl */ `
     // light in them builds up, as in layered tissue. (Premultiplied: the
     // material blends ONE, ONE_MINUS_SRC_ALPHA.)
     vec3 layered = emit * 0.2 + held;
-    gl_FragColor = vec4(lit + emit * 0.8, clamp(alpha, 0.0, 0.92) * uFade);
+    // (uFade over 1, a D1 resident fuller than a placed veil, is capped short of opaque.)
+    gl_FragColor = vec4(lit + emit * 0.8, min(clamp(alpha, 0.0, 0.92) * uFade, 0.95));
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
     #include <fog_fragment>
@@ -520,11 +637,41 @@ const FILM_FRAGMENT = /* glsl */ `
  *   halo      additive light on the terrain (now only the debug splines:
  *             the colony's light comes from accumulation.js instead)
  */
-export function createFormMaterial({ kind, tint = PALETTE.paleLavender, gain = 1, edgeGlow = 0.12, specular, body = 1, flow = 0 }) {
+export function createFormMaterial({ kind, tint = PALETTE.paleLavender, gain = 1, edgeGlow = 0.12, specular, body = 1, flow = 0, nearFade = null, encounter = false, filmGain = 1, spots = 1, light = null, wind = false, release = false, stain = false }) {
   if (kind === 'halo') return createHaloMaterial(tint)
-  if (kind === 'tissue') return createTissueMaterial(tint)
+  if (kind === 'tissue') return withLight(createTissueMaterial(tint), light?.tissue)
   const film = kind === 'film'
-  return new THREE.ShaderMaterial({
+  // The Habitat's options (off everywhere else, and then not compiled):
+  // `nearFade` [from, to] units, films only; `encounter`, the dent.
+  const defines = {}
+  const extra = {}
+  if (nearFade && film) {
+    defines.NEAR_FADE = ''
+    extra.uNearFade = { value: new THREE.Vector2(...nearFade) }
+  }
+  // The Habitat's D1: `wind` (a resident bent by its own air) and
+  // `release` (where its films came away), both lifecycle residents only.
+  if (wind) {
+    defines.WIND = ''
+    extra.uWind = { value: new THREE.Vector4(0, 0, 0, 1) }
+  }
+  if (stain && film) {
+    defines.STAIN = ''
+    extra.uStain = { value: new THREE.Vector4(0.6, 0.8, 1.0, 0) }
+  }
+  if (release && film) {
+    defines.RELEASE = ''
+    extra.uLeft = { value: Array.from({ length: 4 }, () => new THREE.Vector4()) }
+    extra.uAcross = { value: new THREE.Vector2(1, 0) }
+  }
+  if (encounter) {
+    defines.ENCOUNTER = ''
+    extra.uDent = { value: new THREE.Vector3() }
+    extra.uDentAt = { value: new THREE.Vector4(0, 0, 0, 0.2) }
+    extra.uDentFoot = { value: new THREE.Vector4(0, 0.1, 1, 0) }
+  }
+  const material = new THREE.ShaderMaterial({
+    defines,
     fog: true,
     transparent: film,
     premultipliedAlpha: film,
@@ -549,7 +696,9 @@ export function createFormMaterial({ kind, tint = PALETTE.paleLavender, gain = 1
         uLean: { value: new THREE.Vector2(1, 0) },
         uSpecular: { value: specular ?? (kind === 'glass' ? 0.45 : 0.3) },
         uTint: hexUniform(tint),
-        uGain: { value: gain },
+        // `filmGain`: the Habitat's `look=soft` comparison quietens films only.
+        uGain: { value: film ? gain * filmGain : gain },
+        uSpots: { value: spots },
         uEdgeGlow: { value: edgeGlow },
         // The terrain's own light, so ground and forms share one scene.
         uLightDir: { value: new THREE.Vector3(-0.6, 0.42, -0.55).normalize() },
@@ -563,11 +712,27 @@ export function createFormMaterial({ kind, tint = PALETTE.paleLavender, gain = 1
         uRim: hexUniform('#A9B0E8'),
         uMint: hexUniform(PALETTE.moonlitMint),
         ...accumulationUniforms(),
+        ...extra,
       },
     ]),
     vertexShader: VERTEX,
     fragmentShader: film ? FILM_FRAGMENT : SOLID_FRAGMENT,
   })
+  return withLight(material, light?.[kind])
+}
+
+/**
+ * `light` (the Habitat's D1): the scene's own light for one kind of form,
+ * { sky, ground, color }, where the look lifts the ground's light, so forms
+ * are lit as the ground they stand on is. None: as authored.
+ */
+function withLight(material, L) {
+  if (!L) return material
+  const u = material.uniforms
+  if (L.sky && u.uSkyAmbient) u.uSkyAmbient.value.set(L.sky)
+  if (L.ground && u.uGroundAmbient) u.uGroundAmbient.value.set(L.ground)
+  if (L.color && u.uLightColor) u.uLightColor.value.set(L.color)
+  return material
 }
 
 /**

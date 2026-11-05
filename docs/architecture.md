@@ -246,6 +246,138 @@ How it sits in the architecture:
   the default (`makeDefault`) so the layer can frame the patch. Frames are
   pixel-identical.
 
+## Study 11: first-person presence (dev flag)
+
+Off unless the URL has `?presence=1`; Explore only, and it combines with
+study 10's flags. One control enters the world and returns to the overview
+([study 11](11-presence-study.md)).
+
+| Part | Where | What it does |
+|---|---|---|
+| Presence | `lib/presence.js` (`Presence`, `formProxy`, `chooseEntry`) | Pure data, stepped per frame. A drifting body that follows the floor at a chosen height, keeps 0.3 from the forms' built vertices, stays on the slab, and is carried a little by `airVelocity` |
+| Camera | `components/PresenceCamera.jsx`, inside `Scene` | Takes the camera from the orbit controls (disabled while inside), flies in and out, reads keys, drags and the wheel. Builds the forms' proxy once per world with `buildScatterGeometry` (residents of the lifecycle left out). `window.__presence` for scripted checks |
+| Control | `components/PresenceControl.jsx` and `.css` | The one button and a line of keys. Explore's panel and title step back while inside, by rules that need a class only the presence sets |
+| Wiring | `App.jsx` | `PRESENCE` from the URL; `inside` (reset on changing views); the air's settings |
+
+It moves only the camera. It writes no state, saves nothing, and nothing in
+the world depends on it. With the flag off, nothing it adds is mounted.
+
+## The Habitat (`/habitat`, v0)
+
+Its own page, chosen in `Root.jsx` like the Atlas (`lib/route.js`
+`isHabitat`), lazily loaded ([study 12](12-habitat-v0.md)). It shares the
+generation and ecological code and keeps its own state:
+
+| Part | Where |
+|---|---|
+| Configuration | `lib/habitat.js` (`HABITAT`): Explore's defaults (`worldDefaults.js`, shared with `App.jsx`) with the world pinned |
+| World | `lib/deriveWorld.js`: the same chain App memoises, as one pure call |
+| Page | `Habitat.jsx`: `Scene` with a render `profile` (pixel-ratio cap, no orbit), `ScatterLayers` with several `lifecycles`, `withhold`, `residue`, `formOptions` and `carriers`, `PresenceCamera` with a fixed `arrival`, `withhold` and `contacts` |
+| Encounter | `lib/encounter.js` (`Membrane`), `components/EncounterVeil.jsx`, `ENCOUNTER` in the form vertex shader |
+| Far field | `lib/farField.js`, `components/FarField.jsx`, Terrain's `far` prop (`FAR` in the water shader) |
+
+All the shared components' new props are off by default, and each new
+shader block sits behind a define, so Explore and the studies compile and
+draw as before.
+
+**Spatial studies** (`/habitat/a`, `/habitat/b`; [study 13](13-habitat-spaces.md)).
+`SPACES` in `lib/habitat.js` holds v0 and the two studies; `composeSpace`
+(`lib/habitatCompose.js`) applies a study's rule, thresholds or vessels
+(`lib/habitatSpaces.js`), and chooses its patches, encounter and arrival.
+C (`/habitat/c`, [study 14](14-habitat-c.md)) adds the canopy
+(`placeCanopy`, `buildCanopy`) and smooth motion (`SMOOTH` in
+`lib/presence.js`). It is on in C only; any Habitat page can switch it
+with `?motion=smooth|classic`. The shared code gained these optional
+inputs, unused elsewhere:
+- `smooth` on Presence and PresenceCamera;
+- `plane` (a smoothed distance) from the forms' proxy.
+
+Visual comparisons ([study 15](15-habitat-c-visual.md)) use `?look=soft`
+(LOOKS in `lib/habitat.js`) and `?canopy=0` on any Habitat page. They are
+carried by more optional inputs, all at their old values unless a look sets
+them:
+- `filmGain` and `spots` on createFormMaterial (the film's new `uSpots`);
+- `dormant` and `skyHorizon` on Terrain's shader descriptor (its new
+  `uDormant`);
+- `background`, `haze` and `sky` in Scene's profile (the sky's opt-in
+  `encode`);
+- `palette` on FarField, and `sink` and `flatten` on buildFarField.
+
+C1 (`/habitat/c1`, [study 16](16-habitat-foundation.md)) is the working
+foundation: C with `LOOKS.foundation`, the canopy hidden, and the far ground
+drawn by the terrain's own shader. It uses:
+- `farGround` on Terrain and Scene: a `FAR` define in the terrain material,
+  whose uniforms it shares;
+- `uEdgeQuiet` on the terrain;
+- `fine` and `field` on buildFarField.
+
+All are off elsewhere.
+
+D (`/habitat/d`, [study 17](17-habitat-d.md)) is a wider world (48 units)
+with colonies across it, each lifecycle begun at its colony's age, and a
+horizon. Its own rules are in `lib/habitatWorld.js` (`shallows`,
+`colonyAges`, `prerun`, `composeDistributed`). It uses:
+- `size` on Scene and Terrain, `fieldSize` and `follow` on AmbientAir,
+  `bound` and `nearAir` on PresenceCamera and Presence, `profile.far`;
+- `historyRes`, `stretch` and `relief` in deriveWorld's params
+  (`runHistory`'s `res`, createField's `stretch`, withRelief's `shape`);
+- `colonyMax`, `gatherBy: 'land'` and `deplete` in the scatter design
+  (`findColonies`);
+- `airNear` on Lifecycle (`colonyAirData`'s `all` and `near`);
+- `horizon` on buildFarField;
+- `colours`, `farDissolve`, `cueLine`, `skyZenith`, `waterShallow` and
+  `waterDeep` on Terrain's shader descriptor;
+- `mid`, `glow` and `glowDir` in the sky (its `THREE_STOP` define);
+- `cullLives` on ScatterLayers (`cull` on LifecycleLayer).
+
+The air's density reach and the haze and wisp layers now read the floor's
+own size, which on the 26-unit slab is the value they had.
+
+D1 (`/habitat/d1`, [study 18](18-habitat-d1.md)) is D's world and ecology
+exactly, in `LOOKS.open1`, with the lifecycles drawn to be read from eye
+height (`legible`). It uses:
+- `smoothLight`, `reliefLight`, `wet`, `dryTint`, `recordGain`, `reflect`,
+  `skyLift`, `veil` and `swell` on Terrain's shader descriptor (the terrain's
+  `uSmoothLight`, `uReliefLight`, `uWet`, `uWetSky`, `uDryTint`,
+  `uRecordGain`; the water's `uSkyLift`, `uReflect`, `uVeil`, `uSwell`);
+- `glowGain` in the sky;
+- `light` on createFormMaterial (a light per kind of form);
+- `legible` on ScatterLayers and LifecycleLayer: `over` on createFilmMesh,
+  `wind` and `release` on createFormMaterial (its `WIND` and `RELEASE`
+  defines), the residue's `DEPOSIT_LEGIBLE`, density from a resident's body,
+  and the warm accent's variant 6.
+
+All are off elsewhere. The lifecycle keeps one more display record (a
+resident's `left`: where each film came away), and its working grids are now
+shared by all lifecycles (`WORKING`); neither changes any outcome.
+
+M1 (`/habitat/m1`, [study 19](19-collective-morphogenesis.md)) is D1 with a
+commons: `lib/morph.js` (`Commons`, `MORPH`, `prerunTogether`), a cue carried
+on the air (`airWaves`, now exported) on one world clock. It uses:
+- `commons` and `worldOffset` on Lifecycle: `release` emits a puff, and
+  `gather` (every `MORPH.every` steps) lets residents answer by state; the
+  lifecycle counts its `steps`;
+- `stain` on createFormMaterial (a `STAIN` define);
+- `components/MorphAir.jsx`, the cue drawn as tinted air.
+
+Without a commons, none of it runs.
+
+M2 (`/habitat/m2`, [study 20](20-cue-flow.md)) is M1 drawn differently: the
+cue in the wisps rather than as puffs. It uses:
+- `cue` and `wispFollow` on AmbientAir (passed through Scene's `air`), and
+  `cue` and `colonyRef` on AirWisps: a `CUE` define in `WISPS_GLSL` and the
+  wisps' shaders (the last region's release points follow recent release
+  sites; grains in the cue take its colour; its part is laid over the scene
+  by a second composite pass), `WISP_CUE` in `lib/wisps.js`.
+
+Without `cue`, the wisps are as before.
+
+The earlier studies added four more:
+- `shapingOp` on `createField`;
+- `cue` on Terrain (`waterCue` on Scene);
+- `forms` on PresenceCamera;
+- the Habitat path's suffix in `lib/route.js`.
+
 ## Saved configurations
 
 `lib/savedState.js`:

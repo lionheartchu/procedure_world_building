@@ -65,6 +65,7 @@
  *
  * For the display it also keeps when matter last crossed from one place to
  * another (`drawn`, `tookAt`, `gaveAt`, `lastRelease`, beside `arrived`),
+ * where each of a resident's films came away (`left`),
  * and how much was taken up in the last moments (`recentUptake`,
  * `recentInflow`). These are records only: nothing in the simulation reads
  * them.
@@ -143,6 +144,24 @@ export const RECENT = 2.5
 export const recentAt = (value, at, now) => value * Math.exp(-(now - at) / RECENT)
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v)
+
+/**
+ * Working grids, one set per grid size, shared by every lifecycle: each is
+ * used only within one call (a deposit settling, a look for a place) and
+ * left as it began (`fresh` all zero; the rest written in full before they
+ * are read), and lifecycles step one after another. With many lifecycles
+ * (the Habitat's D: 13) this saves four whole-world grids and a table each.
+ */
+const WORKING = new Map()
+function working(res) {
+  let w = WORKING.get(res)
+  if (!w) {
+    const n = res * res
+    w = { fresh: new Float32Array(n), surface: new Float32Array(n), delta: new Float32Array(n), scratch: new Float32Array(n), sat: new Float64Array((res + 1) * (res + 1)) }
+    WORKING.set(res, w)
+  }
+  return w
+}
 const lerp = (a, b, t) => a + (b - a) * t
 const smoothstep = (e0, e1, x) => {
   const t = clamp01((x - e0) / (e1 - e0 || 1e-6))
@@ -175,8 +194,16 @@ export class Lifecycle {
    * @param seed     the colony seed
    * @param conduit  whether a shared tissue joins this colony to another
    * @param fold     with the tissue, choose one stretch for the fold study (display only)
+   * @param colony   the colony whose patch this is (its index); the first by default
+   * @param holds    the first residents' remaining holds (s): a valid starting
+   *                 state of its own, so patches need not change together
+   * @param commons  the Habitat's M1 only (lib/morph.js): the cue the
+   *                 lifecycles share. Its films' releases breathe cue into
+   *                 the air, and its residents gather it and may respond
+   *                 (`gather`). None: as before, exactly.
+   * @param worldOffset with a commons: this lifecycle's steps at arrival (its age / step)
    */
-  constructor({ world, scatter, history, field, streams, simParams, air, feedback = true, seed = 1, conduit = false, fold = false }) {
+  constructor({ world, scatter, history, field, streams, simParams, air, feedback = true, seed = 1, conduit = false, fold = false, colony = 0, holds = LIFECYCLE.firstHolds, airNear = false, commons = null, worldOffset = 0 }) {
     this.world = world
     this.history = history
     this.feedback = feedback
@@ -190,10 +217,13 @@ export class Lifecycle {
     this.res = res
     this.cell = world.size / res
     this.residual = new Float32Array(res * res)
-    this.fresh = new Float32Array(res * res)
-    this.surface = new Float32Array(res * res)
-    this.delta = new Float32Array(res * res)
-    this.scratch = new Float32Array(res * res)
+    // Working grids (shared: see WORKING).
+    const w = working(res)
+    this.fresh = w.fresh
+    this.surface = w.surface
+    this.delta = w.delta
+    this.scratch = w.scratch
+    this.sat = w.sat
     /** The residual by where it came from: resident id → its grid. Their sum is `residual`. */
     this.bySource = new Map()
     /** When matter last arrived in each cell (simulation seconds). */
@@ -206,13 +236,15 @@ export class Lifecycle {
     this.version = 0
 
     this.floor = makeFloor(field, { size: world.size, elevation: world.elevation, waterLevel: world.waterLevel })
-    this.colonyAir = colonyAirData(scatter.colonies, scatter.layers.bloom.instances)
-    this.colony = scatter.colonies.find((c) => c.index === 0)
-    const anchor = scatter.layers.bloom.instances.find((b) => b.colony === 0 && b.role === 'anchor')
+    this.colony = scatter.colonies.find((c) => c.index === colony)
+    // `airNear` (a world with more membranes than the air holds: the
+    // Habitat's D): the ones nearest this colony, where its films fly.
+    this.colonyAir = colonyAirData(scatter.colonies, scatter.layers.bloom.instances, airNear && this.colony ? { near: [this.colony.x, this.colony.z] } : undefined)
+    const anchor = scatter.layers.bloom.instances.find((b) => b.colony === colony && b.role === 'anchor')
     this.anchor = anchor
     this.lean = anchor ? [Math.cos(anchor.lean), Math.sin(anchor.lean)] : this.colony?.dir ?? [1, 0]
 
-    const first = chooseResidents(scatter)
+    const first = chooseResidents(scatter, colony)
     this.first = first
     // Where nothing may form: the colony's other membranes, as placed, and
     // the streams. The residents' own places are not claimed: when they
@@ -270,6 +302,10 @@ export class Lifecycle {
     }
 
     this.t = 0
+    /** Steps run, and (with a commons) how many of them were before arrival. */
+    this.steps = 0
+    this.commons = commons
+    this.worldOffset = worldOffset
     this.acc = 0
     this.paused = false
     this.speed = 1
@@ -281,7 +317,7 @@ export class Lifecycle {
       const body = LIFECYCLE.bodyPerHeight * desc.height
       return this.makeResident({ ...desc }, {
         stage: 'holding',
-        hold: LIFECYCLE.firstHolds[k] ?? 200 + 90 * k,
+        hold: holds[k] ?? 200 + 90 * k,
         body,
         need: body,
         taken: body,
@@ -333,15 +369,76 @@ export class Lifecycle {
     return n
   }
 
+  /** With a commons: the world step this lifecycle is at (0 at arrival). */
+  get worldStep() {
+    return this.steps - this.worldOffset
+  }
+
   stepOnce() {
     const dt = LIFECYCLE.step
     this.t += dt
+    this.steps++
+    // The shared cue first brought up to this world step (lib/morph.js).
+    if (this.commons) this.commons.reach(this.worldStep)
     for (const r of this.residents) this.live(r, dt)
     for (const f of this.films) this.carry(f, dt)
     if (this.conduit) this.circulate(dt)
     if (this.t >= this.nextLook - 1e-9) {
       this.nextLook += LIFECYCLE.look
       this.lookForPlace()
+    }
+    if (this.commons && this.worldStep % this.commons.K.every === 0) this.gather(this.worldStep)
+  }
+
+  /**
+   * The Habitat's M1 (lib/morph.js): its residents gather the cue the air
+   * brings them, as it was LAG steps ago (so what every lifecycle released
+   * by then is in it, whichever ran first), and forget it slowly. The one new
+   * rule: a resident standing full and a while gathers past the threshold
+   * and lets go — it begins to lie down now. Any other resident is reached
+   * (its gathered cue is kept, for the display) but does not respond.
+   */
+  gather(w) {
+    const K = this.commons.K
+    const dt = K.every * LIFECYCLE.step
+    const keep = Math.exp(-dt / K.forget)
+    for (const r of this.residents) {
+      if (r.stage === 'ended') {
+        r.cue = 0
+        continue
+      }
+      const c = this.commons.cueAt(r.desc.p[0], r.desc.p[2], w - K.lag, r.id)
+      const top = this.commons.top
+      r.cue = c
+      r.dose = (r.dose ?? 0) * keep + c * dt
+      // Still taking matter up: it turns toward where the release was, and holds it.
+      if (!r.reach) r.reach = [0, 0]
+      const fade = Math.exp(-dt / K.reach.memory)
+      r.reach[0] *= fade
+      r.reach[1] *= fade
+      const taking = (r.stage === 'forming' || r.stage === 'holding') && r.taken < K.full * r.need
+      if (taking && top && c > 0) {
+        const dx = top.x0 - r.desc.p[0]
+        const dz = top.z0 - r.desc.p[2]
+        const d = Math.hypot(dx, dz)
+        if (d > 1e-3) {
+          r.reach[0] += (dx / d) * c * dt * K.reach.gain
+          r.reach[1] += (dz / d) * c * dt * K.reach.gain
+          const m = Math.hypot(r.reach[0], r.reach[1])
+          if (m > K.reach.most) {
+            r.reach[0] *= K.reach.most / m
+            r.reach[1] *= K.reach.most / m
+          }
+        }
+      }
+      const ready = r.stage === 'holding' && r.taken >= K.full * r.need && r.stageTime >= K.stood
+      if (ready && r.dose >= K.threshold && r.stageTime < r.hold) {
+        r.hold = r.stageTime
+        r.respondedAt = this.t
+        const top = this.commons.top
+        this.commons.responses.push({ n: w, colony: this.colony.index, resident: r.id, at: [r.desc.p[0], r.desc.p[2]], dose: r.dose, from: top && { colony: top.colony, resident: top.resident, born: top.born } })
+        this.event('respond', { resident: r.id, dose: +r.dose.toFixed(4) })
+      }
     }
   }
 
@@ -419,11 +516,17 @@ export class Lifecycle {
     // From its upper part, which is lower and further out the more it lies.
     const up = d.height * (1 - r.recline) * (0.55 + 0.4 * this.random()) + 0.1
     const out = d.height * r.recline * (0.3 + 0.5 * this.random())
-    const x = d.p[0] + across[0] * along + lean[0] * out
-    const z = d.p[2] + across[1] * along + lean[1] * out
+    // M1: a resident turned toward a neighbour's release lets its films go from the turned sheet.
+    const turn = r.reach ? d.height * (1 - r.recline) : 0
+    const x = d.p[0] + across[0] * along + lean[0] * out + (r.reach ? r.reach[0] * turn : 0)
+    const z = d.p[2] + across[1] * along + lean[1] * out + (r.reach ? r.reach[1] * turn : 0)
     r.body -= matter
     r.released += matter
     r.lastRelease = { t: this.t, at: [x, this.groundAt(x, z) + up, z] }
+    // Every release, for the display (a record only, like lastRelease):
+    // where each film came away, and how far the resident lay then.
+    if (!r.left) r.left = []
+    r.left.push({ t: this.t, along, height: up, recline: r.recline })
     // With the shared tissue, part of what it releases goes down into the
     // ground at its base (where there is no tissue yet, a growth begins);
     // the rest leaves as a film. Without the tissue, all of it is a film.
@@ -451,6 +554,8 @@ export class Lifecycle {
       settledAt: 0,
     }
     this.films.push(f)
+    // M1: the disturbance breathed into the air where it left (a signal: no matter).
+    if (this.commons) this.commons.emit({ n: this.worldStep, x, z, matter, colony: this.colony.index, resident: r.id })
     this.event('release', { resident: r.id, film: f.id, matter: +matter.toFixed(4), at: [+x.toFixed(3), +z.toFixed(3)] })
   }
 
@@ -1062,7 +1167,6 @@ export class Lifecycle {
     // enough is passed over before its matter is weighed (the same choice,
     // sooner).
     const res = this.res
-    if (!this.sat) this.sat = new Float64Array((res + 1) * (res + 1))
     const T = this.sat
     for (let j = 0; j < res; j++) {
       let row = 0

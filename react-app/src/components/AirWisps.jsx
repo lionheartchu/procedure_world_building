@@ -3,7 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { GPUComputationRenderer } from 'three/examples/jsm/misc/GPUComputationRenderer.js'
 import { AIR_GLSL } from '../lib/air'
-import { SOURCE_GRAINS, WISPS, WISPS_GLSL } from '../lib/wisps'
+import { SOURCE_GRAINS, WISP_CUE, WISPS, WISPS_GLSL } from '../lib/wisps'
 import { colonyAirUniforms, setColonyAir } from '../lib/airColony'
 import { mulberry32 } from '../lib/noise'
 
@@ -74,6 +74,38 @@ const COMPOSITE_FRAGMENT = /* glsl */ `
   }
 `
 
+/**
+ * The Habitat's M2 (`cue`): the buffer's alpha holds how much of each pixel's
+ * residue is the cue's. That part is laid over the scene as tinted air, at a
+ * set brightness a step above D's ground (at the ground's own brightness its
+ * lilac and ice did not show at all), capped so it never reaches white; the
+ * rest is screened as before. `CUE_OVER`: its most opacity, how
+ * fast it reaches it, and its brightness.
+ */
+const CUE_OVER = { most: '0.6', rate: '0.05', value: '0.86' }
+
+const COMPOSITE_CUE_FRAGMENT = /* glsl */ `
+  uniform sampler2D uLight;
+  uniform float uPart; // 0: the rest, screened; 1: the cue's part, laid over
+  varying vec2 vUv;
+  void main() {
+    vec4 B = texture2D(uLight, vUv);
+    vec3 L = B.rgb;
+    float lum = dot(L, vec3(0.3, 0.5, 0.2));
+    float share = clamp(B.a * 0.8 / max(lum, 1e-5), 0.0, 1.0);
+    if (uPart < 0.5) {
+      vec3 R = L * (1.0 - share);
+      float l = lum * (1.0 - share);
+      float kept = l > 1e-5 ? ${CEILING} * (1.0 - exp(-l / ${CEILING})) / l : 1.0;
+      gl_FragColor = vec4(R * kept, 1.0);
+    } else {
+      float a = ${CUE_OVER.most} * (1.0 - exp(-B.a / ${CUE_OVER.rate}));
+      vec3 hue = L / max(lum, 1e-5) * ${CUE_OVER.value};
+      gl_FragColor = vec4(hue * a, a);
+    }
+  }
+`
+
 /** How fast the rising third of the residue lifts among a colony's forms (units/s). */
 const COLONY_LIFT = '0.055'
 
@@ -114,7 +146,23 @@ const SIMULATE = /* glsl */ `
       // Released again: at its point, spread as the point is spreading now.
       vec2 xz = place.xz + b.xy * spread(src, born);
       p = vec3(xz.x, airFloor(xz) + pref, xz.y);
-    } else {
+    }
+    #ifdef CUE
+    else if (cueSource(src)) {
+      // M2: the cue's own air is carried as the commons carries the cue (its
+      // open waves, at the cue's share of their speed, at the cue's height,
+      // on the commons' clock), so what is drawn goes where the simulated cue
+      // goes; colony air does not hold it, as it does not hold the cue. A
+      // little fraying with age, for the drawing only.
+      vec2 w = airWaves(vec3(p.x, airFloor(p.xz) + uCueHeight, p.z), uCueTime).xy * uCueCarry;
+      p.xz += (w + eddies(p.xz, uTime) * 0.04 * age) * uDelta;
+      // Drawn opening upward as it goes, as smoke leaving a source does: thin
+      // where it left the sheet, rising and fraying downwind. (The cue itself
+      // is a field over the ground; its height here is the drawing's.)
+      p.y = airFloor(p.xz) + 0.22 + 0.12 * b.z + (0.15 + 0.95 * fract(a.w * 3.3)) * age;
+    }
+    #endif
+    else {
       // About a third of the residue rises among a colony's forms (it flows
       // between the membranes, where their own lift is slight, so this lift
       // follows the colony itself), drifting up and over before it falls back.
@@ -156,6 +204,9 @@ const LOOK_GLSL = /* glsl */ `
   // Whether release point s is in use: a region shown at this Wisps amount,
   // or an existing colony while Colony air is on.
   float sourceShown(float s) {
+    #ifdef CUE
+    if (cueSource(s)) return step(0.001, cueSlot(s).w);
+    #endif
     if (!colonySource(s)) return step(floor(s / SOURCES_PER_REGION) + 0.5, uActive);
     float ci = floor((s - REGION_SOURCES) / PER_COLONY);
     return step(ci + 0.5, float(uColonyCount)) * step(0.001, uColonyAir) * step(0.5, uActive);
@@ -165,6 +216,10 @@ const LOOK_GLSL = /* glsl */ `
   // released. A colony's incoming air is released well upwind, so it may
   // show sooner: it is seen arriving.
   float ageFade(float s, float age) {
+    #ifdef CUE
+    // The cue's air is seen leaving the sheet it left.
+    if (cueSource(s)) return smoothstep(0.015, 0.08, age) * (1.0 - smoothstep(0.7, 1.0, age));
+    #endif
     float rise = colonySource(s) ? smoothstep(0.03, 0.15, age) : smoothstep(0.12, 0.42, age);
     return rise * (1.0 - smoothstep(colonySource(s) ? 0.78 : 0.7, 1.0, age));
   }
@@ -220,6 +275,9 @@ const VERTEX = /* glsl */ `
   varying vec3 vColor;
   varying float vAlpha;
   varying float vSeed;
+  #ifdef CUE
+  varying float vCue;
+  #endif
   float vAlphaScale;
 
   void main() {
@@ -234,6 +292,17 @@ const VERTEX = /* glsl */ `
     float born = uTime - age * period;
     float nearColony = colonyNear(p);
     float inColony = smoothstep(0.05, 0.35, nearColony);
+    // M2: how much of the simulated cue is where this grain is (0..1), and
+    // whether it was let out with the cue itself.
+    float cueK = 0.0;
+    float cueT = 0.0;
+    bool fromCue = false;
+    #ifdef CUE
+    vec2 cc = cueAt(p.xz);
+    cueK = 1.0 - exp(-cc.x / uCueRef);
+    cueT = cc.y;
+    fromCue = cueSource(src);
+    #endif
 
     // How much of it is seen.
     float alpha = (uMist > 0.5 ? ${ALPHA.mist} : ${ALPHA.grain}) * 2.0 * uStrength;
@@ -242,7 +311,19 @@ const VERTEX = /* glsl */ `
     alpha *= release(src, born) * sourceIntensity(src);
     // A colony's incoming air comes and goes less, so it reads as one flow,
     // and is mostly fine grains: its streaks show the air, a mist would hide it.
-    alpha *= colonySource(src) ? mix(visibility(p, uTime), 1.0, 0.6) * (uMist > 0.5 ? 0.3 : 1.0) : visibility(p, uTime);
+    float vis = colonySource(src) ? mix(visibility(p, uTime), 1.0, 0.6) : visibility(p, uTime);
+    float mistShare = colonySource(src) && uMist > 0.5 ? 0.3 : 1.0;
+    // M2: air the cue is in shows wherever it is (the visibility field does
+    // not hide it); the cue's own air shows only where the cue is. Without
+    // the cue both are as before.
+    alpha *= (fromCue ? 1.0 : mix(vis, 1.0, cueK)) * mistShare;
+    if (fromCue) alpha *= cueK;
+    // The cue is shown by fine grains only, streaked along their motion: mist
+    // drawn with it made one soft blob of the whole cue. Its own release
+    // points let out no mist.
+    if (fromCue && uMist > 0.5) alpha = 0.0;
+    // Fewer of them, each longer, so they read as filaments, not a mass.
+    if (fromCue && fract(tone * 17.3) > 0.4) alpha = 0.0;
     alpha *= 0.55 + 0.45 * fract(tone * 13.1);
 
     vec4 c0 = projectionMatrix * viewMatrix * vec4(p, 1.0);
@@ -252,9 +333,11 @@ const VERTEX = /* glsl */ `
     // be large on screen and read as light streaks, so it goes.
     // (In a colony, where it moves slowly and its streaks are short, it may
     // come nearer.)
+    // (M2: air the cue is in may come nearer, to a little over a unit.)
+    float nearIn = mix(inColony, 1.0, cueK);
     alpha *= uMist > 0.5
-      ? smoothstep(mix(5.0, 3.0, inColony), mix(10.0, 6.5, inColony), dist) * (1.0 - smoothstep(30.0, 46.0, dist))
-      : smoothstep(mix(4.0, 2.0, inColony), mix(9.0, 5.0, inColony), dist) * (1.0 - smoothstep(26.0, 42.0, dist));
+      ? smoothstep(mix(5.0, mix(3.0, 1.2, cueK), nearIn), mix(10.0, mix(6.5, 3.0, cueK), nearIn), dist) * (1.0 - smoothstep(30.0, 46.0, dist))
+      : smoothstep(mix(4.0, mix(2.0, 0.8, cueK), nearIn), mix(9.0, mix(5.0, 2.2, cueK), nearIn), dist) * (1.0 - smoothstep(26.0, 42.0, dist));
     alpha *= mix(1.0, 0.25, skyBehind(p));
     // Drawn off screen without the scene's depth: the land hides residue here.
     alpha *= 1.0 - hiddenBy(p);
@@ -275,7 +358,7 @@ const VERTEX = /* glsl */ `
     // Residue caught circling in an eddy stays near where it was released.
     vec3 origin = sourcePlace(src, born);
     float carried = length(p.xz - origin.xz) / max(age * period * 0.075, 0.4);
-    alpha *= smoothstep(0.25, 0.6, carried);
+    if (!fromCue) alpha *= smoothstep(0.25, 0.6, carried);
     // Wherever residue gathers more densely than a loose trace (an eddy, slow
     // air, overlapping traces), each grain gives less light, so no place can
     // glow beyond what a loose trace gives.
@@ -298,16 +381,26 @@ const VERTEX = /* glsl */ `
     vColor = mix(SILVER, palette(hue), 0.75 * stain(p, uTime));
     // Near a colony, a passing tint of its own colours.
     vColor = mix(vColor, colonyHue(p, uTime), 0.6 * colonyTint(p, uTime));
+    #ifdef CUE
+    // The cue's own colour, by how far it has travelled: a pinker lilac as it
+    // leaves, ice, then silver as it fades (MorphAir's, M1).
+    vec3 cueCol = mix(vec3(0.765, 0.608, 0.875), vec3(0.565, 0.714, 0.925), smoothstep(0.0, 0.45, cueT));
+    cueCol = mix(cueCol, vec3(0.70, 0.73, 0.85), smoothstep(0.45, 1.0, cueT));
+    vColor = mix(vColor, cueCol, 0.9 * cueK);
+    // (Mist keeps the cue's colour, screened as the rest; only grains lay it over the scene.)
+    vCue = uMist > 0.5 ? 0.0 : cueK;
+    #endif
     if (uDebug > 0.5) {
       // Only the colonies' incoming air, in mint: slowed grains brighter.
       alpha *= colonySource(src) ? 1.5 : 0.0;
       vColor = mix(vec3(0.5, 0.6, 0.75), vec3(0.45, 1.0, 0.8), 1.0 - moving);
     }
 
-    // Size: fine grains, broad mist that grows as it ages.
+    // Size: fine grains, broad mist that grows as it ages. (M2: the cue's own
+    // grains twice as wide, so they read at a middle distance.)
     float width = uMist > 0.5
       ? mix(0.3, 0.7, fract(tone * 3.7)) * (0.7 + 1.6 * age)
-      : mix(0.035, 0.075, fract(tone * 3.7));
+      : mix(0.035, 0.075, fract(tone * 3.7)) * (fromCue ? 2.0 : 1.0);
     if (uMist > 0.5) {
       // A mist puff spans many cells of the density map, so the cap above
       // does not bound it: count the puffs overlapping this one (the mist's
@@ -324,7 +417,7 @@ const VERTEX = /* glsl */ `
     // Grains streak along their motion, as in a long exposure.
     float stretch = uMist > 0.5
       ? mix(1.3, 2.0, fract(tone * 9.1))
-      : 1.0 + (speed * mix(2.5, 5.0, fract(tone * 9.1))) / width;
+      : 1.0 + (speed * mix(2.5, 5.0, fract(tone * 9.1)) * (fromCue ? 2.2 : 1.0)) / width;
 
     // Stretched along its motion on screen, as far as the motion shows.
     vec4 c1 = projectionMatrix * viewMatrix * vec4(p + dir * 0.2, 1.0);
@@ -354,6 +447,9 @@ const FRAGMENT = /* glsl */ `
   varying vec3 vColor;
   varying float vAlpha;
   varying float vSeed;
+  #ifdef CUE
+  varying float vCue;
+  #endif
   void main() {
     if (vAlpha <= 0.001) discard;
     float r = length(vQ);
@@ -363,7 +459,12 @@ const FRAGMENT = /* glsl */ `
     float d = r / edge;
     if (d > 1.0) discard;
     float shape = exp(-d * d * mix(3.0, 2.2, uMist)) * (1.0 - d * d);
+    #ifdef CUE
+    // The cue's part of this light, kept in alpha for the composite.
+    gl_FragColor = vec4(vColor * vAlpha * shape, vCue * vAlpha * shape);
+    #else
     gl_FragColor = vec4(vColor * vAlpha * shape, 1.0);
+    #endif
   }
 `
 
@@ -413,10 +514,80 @@ function setAir(u, { t, drift, curl, floor, floorTexture, colonyData, colony }) 
   u.uFloorMin.value = floor.min
   u.uFloorSpan.value = floor.max - floor.min
   u.uWaterY.value = floor.waterY
+  // The floor's own extent: 26 units, or a wider world's (the Habitat's D).
+  u.uFieldSize.value = floor.size ?? 26
   setColonyAir(u, colonyData, colony)
 }
 
 const clearColor = new THREE.Color()
+
+/** The cue's uniforms (M2), on each of the wisps' materials. */
+function cueUniforms() {
+  return {
+    uCueSlot: { value: Array.from({ length: WISP_CUE.slots }, () => new THREE.Vector4()) },
+    uCuePuff: { value: Array.from({ length: WISP_CUE.puffs }, () => new THREE.Vector4()) },
+    uCueTravelled: { value: new Float32Array(WISP_CUE.puffs) },
+    uCueRef: { value: WISP_CUE.ref },
+    // The commons' clock and carriage (lib/morph.js MORPH), for the cue's own air.
+    uCueTime: { value: 0 },
+    uCueCarry: { value: 0.9 },
+    uCueHeight: { value: 0.5 },
+  }
+}
+
+/**
+ * The cue near the visitor, for the wisps (M2): its strongest puffs within
+ * `near`, and the places films came away from within the last `recent` s,
+ * one slot per resident, kept while the cue is still leaving there (how
+ * much: the simulated cue at that place now). Read from the commons; it
+ * changes nothing there.
+ */
+function cueNear(commons, at, slots) {
+  const K = commons.K
+  const puffs = []
+  for (const q of commons.now()) {
+    const d = Math.hypot(q.x - at[0], q.z - at[1])
+    if (d < WISP_CUE.near + q.r) puffs.push(q)
+  }
+  puffs.sort((a, b) => b.s - a.s)
+  puffs.length = Math.min(puffs.length, WISP_CUE.puffs)
+  const since = commons.n - WISP_CUE.recent / K.step
+  const latest = new Map()
+  for (let i = commons.releases.length - 1; i >= 0; i--) {
+    const e = commons.releases[i]
+    if (e.n < since) break
+    const key = e.colony + ':' + e.resident
+    if (!latest.has(key) && Math.hypot(e.x - at[0], e.z - at[1]) < WISP_CUE.near) latest.set(key, e)
+  }
+  // Keep each slot with its resident while it is still letting cue out; fill free ones nearest first.
+  const now = commons.n
+  for (const slot of slots) {
+    if (!slot.key) continue
+    const e = latest.get(slot.key)
+    if (e) {
+      slot.x = e.x
+      slot.z = e.z
+      latest.delete(slot.key)
+    }
+    slot.w = Math.min(1, commons.cueAt(slot.x, slot.z, now) / 0.003)
+    if (slot.w < 0.01) slot.key = null
+  }
+  const free = slots.filter((s) => !s.key)
+  const waiting = [...latest.entries()].sort((a, b) => Math.hypot(a[1].x - at[0], a[1].z - at[1]) - Math.hypot(b[1].x - at[0], b[1].z - at[1]))
+  for (const slot of free) {
+    const next = waiting.shift()
+    if (!next) {
+      slot.w = 0
+      continue
+    }
+    const [key, e] = next
+    slot.key = key
+    slot.x = e.x
+    slot.z = e.z
+    slot.w = Math.min(1, commons.cueAt(e.x, e.z, now) / 0.003)
+  }
+  return puffs
+}
 
 /** The regions shown at a Wisps amount (0..1): none at 0, 4 at 0.5, all 5 at 1. */
 const regionsShown = (amount) => (amount <= 0 ? 0 : Math.min(WISPS.regions, Math.round(2 + amount * 3)))
@@ -426,7 +597,11 @@ const regionsShown = (amount) => (amount <= 0 ? 0 : Math.min(WISPS.regions, Math
  * same field as the dust. `time` is the air's own clock and `floor` its floor
  * (AmbientAir).
  */
-export default function AirWisps({ floor, floorTexture, time, drift, curl, amount, strength, colonyData, colony, debug }) {
+export default function AirWisps({ floor, floorTexture, time, drift, curl, amount, strength, colonyData, colony, debug, cue = null, colonyRef = null }) {
+  // M2 (`cue`, the commons): the cue drawn in the wisps; `colonyRef`, the
+  // visitor's nearest colonies (AmbientAir's, following), so the colonies'
+  // incoming air is drawn where the visitor is.
+  const cueOn = !!cue
   const gl = useThree((s) => s.gl)
   const camera = useThree((s) => s.camera)
   const size = useThree((s) => s.size)
@@ -479,9 +654,11 @@ export default function AirWisps({ floor, floorTexture, time, drift, curl, amoun
     }
     const variable = gpu.addVariable('texturePosition', SIMULATE, start)
     gpu.setVariableDependencies(variable, [variable])
+    if (cueOn) variable.material.defines = { ...variable.material.defines, CUE: '' }
     variable.material.uniforms = {
       ...variable.material.uniforms,
       ...airUniforms(),
+      ...(cueOn ? cueUniforms() : {}),
       // Residue bends round and slows among a colony's forms; only some of it
       // rises (airRiseGain): a little, so it does not pool at their tops.
       uColonyRise: { value: 0.25 },
@@ -501,7 +678,7 @@ export default function AirWisps({ floor, floorTexture, time, drift, curl, amoun
       gpu.compute()
     }
     return { gpu, variable }
-  }, [gl, traits, floor, floorTexture])
+  }, [gl, traits, floor, floorTexture, cueOn])
   useEffect(() => () => sim?.gpu.dispose(), [sim])
   const meshes = useMemo(() => {
     const quad = new THREE.PlaneGeometry(2, 2)
@@ -518,12 +695,16 @@ export default function AirWisps({ floor, floorTexture, time, drift, curl, amoun
       geo.instanceCount = list.length
       geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 2, 0), 40)
       const material = new THREE.ShaderMaterial({
+        defines: cueOn ? { CUE: '' } : {},
         transparent: true,
         depthWrite: false,
         depthTest: false,
-        blending: THREE.AdditiveBlending,
+        // (M2: the cue's part is summed in alpha too.)
+        blending: cueOn ? THREE.CustomBlending : THREE.AdditiveBlending,
+        ...(cueOn ? { blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneFactor } : {}),
         uniforms: {
           ...airUniforms(),
+          ...(cueOn ? cueUniforms() : {}),
           uPositions: { value: null },
           uPrevious: { value: null },
           uTraitsA: { value: traits.A },
@@ -544,7 +725,7 @@ export default function AirWisps({ floor, floorTexture, time, drift, curl, amoun
       return new THREE.Mesh(geo, material)
     }
     return [make(traits.mist, true), make(traits.grains, false)]
-  }, [traits, debug])
+  }, [traits, debug, cueOn])
 
   // The residue's own buffer, and the quad that lays it over the scene.
   const layer = useMemo(() => {
@@ -562,14 +743,33 @@ export default function AirWisps({ floor, floorTexture, time, drift, curl, amoun
         blendEquation: THREE.AddEquation,
         blendSrc: THREE.OneMinusDstColorFactor,
         blendDst: THREE.OneFactor,
-        uniforms: { uLight: { value: target.texture } },
+        uniforms: { uLight: { value: target.texture }, uPart: { value: 0 } },
         vertexShader: COMPOSITE_VERTEX,
-        fragmentShader: COMPOSITE_FRAGMENT,
+        fragmentShader: cueOn ? COMPOSITE_CUE_FRAGMENT : COMPOSITE_FRAGMENT,
       }),
     )
     quad.frustumCulled = false
-    return { scene, target, quad }
-  }, [])
+    // M2: the cue's part, laid over the scene (premultiplied) after the rest is screened.
+    const over = cueOn
+      ? new THREE.Mesh(
+          quad.geometry,
+          new THREE.ShaderMaterial({
+            transparent: true,
+            depthTest: false,
+            depthWrite: false,
+            blending: THREE.CustomBlending,
+            blendEquation: THREE.AddEquation,
+            blendSrc: THREE.OneFactor,
+            blendDst: THREE.OneMinusSrcAlphaFactor,
+            uniforms: { uLight: { value: target.texture }, uPart: { value: 1 } },
+            vertexShader: COMPOSITE_VERTEX,
+            fragmentShader: COMPOSITE_CUE_FRAGMENT,
+          }),
+        )
+      : null
+    if (over) over.frustumCulled = false
+    return { scene, target, quad, over }
+  }, [cueOn])
   // The meshes join the residue's own scene here, not in the memo above: a
   // memo may run twice, and moving them twice leaves the kept scene empty.
   useEffect(() => {
@@ -586,6 +786,7 @@ export default function AirWisps({ floor, floorTexture, time, drift, curl, amoun
       layer.target.dispose()
       layer.quad.geometry.dispose()
       layer.quad.material.dispose()
+      layer.over?.material.dispose()
     },
     [layer],
   )
@@ -606,11 +807,13 @@ export default function AirWisps({ floor, floorTexture, time, drift, curl, amoun
     geo.setAttribute('aRef', new THREE.BufferAttribute(ref, 2))
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(COUNT * 3), 3))
     const material = new THREE.ShaderMaterial({
+      defines: cueOn ? { CUE: '' } : {},
       depthTest: false,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       uniforms: {
         ...airUniforms(),
+        ...(cueOn ? cueUniforms() : {}),
         uPositions: { value: null },
         uPrevious: { value: null },
         uTraitsA: { value: traits.A },
@@ -630,7 +833,7 @@ export default function AirWisps({ floor, floorTexture, time, drift, curl, amoun
     const scene = new THREE.Scene()
     scene.add(points)
     return { target, scene, points, camera: new THREE.Camera() }
-  }, [traits])
+  }, [traits, cueOn])
   useEffect(
     () => () => {
       density.target.dispose()
@@ -649,12 +852,35 @@ export default function AirWisps({ floor, floorTexture, time, drift, curl, amoun
     [meshes],
   )
 
+  // M2: the slots' places and how much cue leaves there, kept between frames.
+  const slots = useMemo(() => Array.from({ length: WISP_CUE.slots }, () => ({ key: null, x: 0, z: 0, w: 0 })), [])
+
   useFrame((_, delta) => {
     if (!sim) return
     const dt = Math.min(delta, 0.05)
-    const state = { t: time.current, drift, curl, floor, floorTexture, colonyData, colony }
+    const state = { t: time.current, drift, curl, floor, floorTexture, colonyData: colonyRef?.current?.data ?? colonyData, colony }
     const u = sim.variable.material.uniforms
     setAir(u, state)
+    if (cueOn) {
+      const puffs = cueNear(cue, [camera.position.x, camera.position.z], slots)
+      const K = cue.K
+      const apply = (cu) => {
+        cu.uCueTime.value = cue.n * K.step
+        cu.uCueCarry.value = K.carry
+        cu.uCueHeight.value = K.height
+        slots.forEach((sl, k) => cu.uCueSlot.value[k].set(sl.x, 0.35, sl.z, sl.w))
+        for (let i = 0; i < WISP_CUE.puffs; i++) {
+          const q = puffs[i]
+          if (q) {
+            cu.uCuePuff.value[i].set(q.x, q.z, q.r, q.s)
+            cu.uCueTravelled.value[i] = Math.min(1, q.age / (K.fade * 1.6))
+          } else cu.uCuePuff.value[i].set(0, 0, 1, 0)
+        }
+      }
+      apply(u)
+      apply(density.points.material.uniforms)
+      for (const m of meshes) apply(m.material.uniforms)
+    }
     u.uDelta.value = dt
     sim.gpu.compute()
     const current = sim.gpu.getCurrentRenderTarget(sim.variable).texture
@@ -712,6 +938,9 @@ export default function AirWisps({ floor, floorTexture, time, drift, curl, amoun
 
   if (!sim) return null
   return (
-    <primitive object={layer.quad} renderOrder={7} />
+    <>
+      <primitive object={layer.quad} renderOrder={7} />
+      {layer.over && <primitive object={layer.over} renderOrder={8} />}
+    </>
   )
 }

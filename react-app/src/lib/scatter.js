@@ -303,6 +303,15 @@ const COLONY = {
   later: 0.25,
   /** Grid the potential is evaluated on. */
   grid: 64,
+  /**
+   * Depletion (`deplete`, off unless a view asks: the Habitat's D). A
+   * colony draws on the record around it, so a site near one keeps less of
+   * its potential, falling off over the colony's radius plus `drawn`
+   * units. Offshoots still begin near a parent (its pull reaches further
+   * than what it draws on), but a group fills its ground and stops, and the
+   * next colony begins wherever the ground is still unclaimed.
+   */
+  drawn: 3,
 }
 
 /**
@@ -332,11 +341,22 @@ function sitePotential(d, params, withField = true) {
  *
  * The potential is blurred first, so a colony starts at a broad strong
  * place rather than a spike.
+ *
+ * Two options, both off unless a view asks (the Habitat's D):
+ *   - `colonyMax`: more colonies than COLONY.max, for a wider world. It is
+ *     only a ceiling; the potential's own thresholds decide how many
+ *   - `gatherBy: 'land'`: a colony draws others only on its own land. The
+ *     matter it sheds settles on the ground around it, and a channel of
+ *     open water between two places interrupts that, so a group stays on
+ *     the rise it began on, and a place across the water has to be good
+ *     enough (`apart`) to begin a group of its own
  */
 export function findColonies(world, params) {
   const n = COLONY.grid
+  const most = params.colonyMax ?? COLONY.max
   const raw = new Float32Array(n * n)
   const rawNear = new Float32Array(n * n)
+  const land = params.gatherBy === 'land' ? new Int32Array(n * n).fill(-1) : null
   const d = {}
   // A colony does not take root in a stream: its site keeps clear of the
   // water veins (they are part of the world it grows in).
@@ -354,7 +374,49 @@ export function findColonies(world, params) {
       const clear = clearOfStreams(x, z)
       raw[j * n + i] = sitePotential(d, params) * clear
       rawNear[j * n + i] = sitePotential(d, params, false) * clear
+      if (land && d.depth > 0) land[j * n + i] = 0
     }
+  }
+  // Land bodies on the same grid: each dry region its own label.
+  if (land) {
+    let label = 0
+    for (let k = 0; k < n * n; k++) {
+      if (land[k] !== 0) continue
+      label++
+      const stack = [k]
+      land[k] = label
+      while (stack.length) {
+        const c = stack.pop()
+        const i = c % n
+        const j = (c - i) / n
+        for (const [a, b] of [[i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1]]) {
+          if (a < 0 || b < 0 || a >= n || b >= n || land[b * n + a] !== 0) continue
+          land[b * n + a] = label
+          stack.push(b * n + a)
+        }
+      }
+    }
+  }
+  const cellOf = (x, z) => {
+    const i = Math.min(n - 1, Math.max(0, Math.floor((x / world.size + 0.5) * n)))
+    const j = Math.min(n - 1, Math.max(0, Math.floor((z / world.size + 0.5) * n)))
+    return j * n + i
+  }
+  // The land a site belongs to: its own cell's, or (a site at the wet margin)
+  // the nearest dry cell's within a cell or two.
+  const landOf = (x, z) => {
+    const k = cellOf(x, z)
+    if (land[k] > 0) return land[k]
+    const i = k % n
+    const j = (k - i) / n
+    for (let r = 1; r <= 2; r++) {
+      for (let b = j - r; b <= j + r; b++) {
+        for (let a = i - r; a <= i + r; a++) {
+          if (a >= 0 && b >= 0 && a < n && b < n && land[b * n + a] > 0) return land[b * n + a]
+        }
+      }
+    }
+    return -1
   }
   const potential = blur(raw, n, 2)
   // Near an established colony the colony field no longer decides: the
@@ -369,12 +431,22 @@ export function findColonies(world, params) {
   const colonies = []
   const pull = (x, z) => {
     let p = 0
-    for (const c of colonies) p = Math.max(p, c.maturity * Math.exp(-((Math.hypot(c.x - x, c.z - z) / COLONY.reach) ** 2)))
+    const here = land ? landOf(x, z) : 0
+    for (const c of colonies) {
+      if (land && c.land !== here) continue
+      p = Math.max(p, c.maturity * Math.exp(-((Math.hypot(c.x - x, c.z - z) / COLONY.reach) ** 2)))
+    }
     return p
+  }
+  const deplete = params.deplete ?? 0
+  const taken = (x, z) => {
+    let t = 0
+    for (const c of colonies) t += c.maturity * Math.exp(-((Math.hypot(c.x - x, c.z - z) / (c.radius + COLONY.drawn)) ** 2))
+    return Math.min(1, t * deplete)
   }
   const tooClose = (x, z, r) => colonies.some((c) => Math.hypot(c.x - x, c.z - z) < COLONY.spacing * (c.radius + r))
   const rejected = new Set()
-  while (colonies.length < COLONY.max) {
+  while (colonies.length < most) {
     let pick = null
     for (let k = 0; k < potential.length; k++) {
       if (rejected.has(k) || potentialNear[k] < best * COLONY.floor) continue
@@ -383,7 +455,8 @@ export function findColonies(world, params) {
       if (!inBounds(world, x, z, 2)) continue
       const near = pull(x, z)
       const settled = Math.min(1, near / 0.6)
-      const here = Math.max(potential[k], potentialNear[k] * settled * 0.9)
+      let here = Math.max(potential[k], potentialNear[k] * settled * 0.9)
+      if (deplete) here *= 1 - taken(x, z)
       if (here < best * COLONY.floor) continue
       if (colonies.length && here < best * lerp(COLONY.apart, COLONY.floor, settled)) continue
       const score = here * (COLONY.independent + (1 - COLONY.independent) * near) * (colonies.length ? 1 : 1 / COLONY.independent)
@@ -400,6 +473,7 @@ export function findColonies(world, params) {
       rejected.add(pick.k)
       continue
     }
+    if (land) colony.land = landOf(colony.x, colony.z)
     colonies.push(colony)
   }
   return colonies
@@ -1025,4 +1099,105 @@ function blur(src, n, radius) {
     }
   }
   return dst
+}
+
+/* --- stray residue (the Habitat) ----------------------------------------- */
+
+/**
+ * Residue no colony holds: the Habitat's transitional forms between
+ * colonies (docs/12-habitat-v0.md). A few small strands of plates and
+ * grains, in the residue layer's own grammar and materials, wherever the
+ * world itself would leave them — and nowhere because of a path:
+ *
+ *   - well away from every colony (beyond its radius and a margin), where
+ *     nothing gathers matter
+ *   - in the tide band, the shallows and the wet margin, where water leaves
+ *     what it carries
+ *   - where History's record is thick, and on ground the residue's own
+ *     slope and depth rules accept
+ *
+ * The strongest few such places, apart from each other, only those within
+ * reach of the best: so a world with no such ground has none. They lie
+ * along the shore (across the slope), the coarse plates downhill of the
+ * grains. Static, like all placement; nothing reads them.
+ */
+export function strayResidue(world, scatter, design, { most = 6, apart = 2.8, share = 0.45 } = {}) {
+  const params = withProtocol(design)
+  const layer = LAYER_BY_ID.shard
+  const [, slopeRule, depthRule] = layer.rules
+  const random = mulberry32((params.seed | 0) * 6151 + 3)
+  const lines = params.streams ?? []
+  const d = {}
+  const found = []
+  const step = 0.5
+  for (let z = -world.size / 2 + step; z < world.size / 2; z += step) {
+    for (let x = -world.size / 2 + step; x < world.size / 2; x += step) {
+      if (!inBounds(world, x, z, 1)) continue
+      let away = Infinity
+      for (const c of scatter.colonies) away = Math.min(away, Math.hypot(c.x - x, c.z - z) - c.radius)
+      if (away < 1.2) continue
+      let stream = Infinity
+      for (const sl of lines) for (let k = 0; k < sl.points.length; k += 3) stream = Math.min(stream, Math.hypot(sl.points[k].x - x, sl.points[k].z - z))
+      if (stream < 1.2) continue
+      sampleAt(world, x, z, d)
+      const tide = smoothstep(-0.5, -0.1, d.shore) * (1 - smoothstep(0.3, 1.0, d.shore))
+      const record = smoothstep(0.35, 0.85, d.trace)
+      const ground = evaluate(slopeRule, d, params) * evaluate(depthRule, d, params)
+      const score = record * tide * smoothstep(1.2, 3, away) * (0.4 + 0.6 * ground)
+      if (score > 0.02) found.push({ x, z, score, downX: d.downX, downZ: d.downZ, trace: d.trace })
+    }
+  }
+  found.sort((a, b) => b.score - a.score)
+  const best = found[0]?.score ?? 0
+  const picked = []
+  for (const f of found) {
+    if (picked.length >= most || f.score < best * share) break
+    if (picked.some((p) => Math.hypot(p.x - f.x, p.z - f.z) < apart)) continue
+    picked.push(f)
+  }
+
+  const at = {}
+  return picked.map((f, index) => {
+    const len = Math.hypot(f.downX, f.downZ) || 1
+    const down = [f.downX / len, f.downZ / len]
+    const along = [-down[1], down[0]]
+    const plates = []
+    const beads = []
+    const size = 0.6 + 0.6 * smoothstep(0.35, 0.95, f.trace)
+    const reach = 0.35 + 0.45 * random()
+    const n = 2 + Math.round(3 * random() * size)
+    for (let k = 0; k < n; k++) {
+      const t = (random() - 0.5) * 2 * reach
+      const x = f.x + along[0] * t + down[0] * (0.05 + 0.15 * random())
+      const z = f.z + along[1] * t + down[1] * (0.05 + 0.15 * random())
+      const [u, v] = world.toUV(x, z)
+      world.sample(u, v, at)
+      const turn = (random() - 0.5) * 0.9
+      const plen = (0.07 + 0.1 * random()) * size
+      plates.push({
+        x,
+        y: world.groundY(u, v),
+        z,
+        dirX: down[0] * Math.cos(turn) - down[1] * Math.sin(turn),
+        dirZ: down[0] * Math.sin(turn) + down[1] * Math.cos(turn),
+        len: plen,
+        width: plen * (0.3 + 0.2 * random()),
+        dip: 0.15 + 0.3 * random(),
+        roll: (random() - 0.5) * 0.35,
+        lift: 0,
+        submerged: clamp01(-at.depth / 0.45),
+        order: k / n,
+        seed: Math.floor(random() * 1e6),
+      })
+    }
+    const m = 6 + Math.round(12 * random() * size)
+    for (let k = 0; k < m; k++) {
+      const t = (random() - 0.5) * 2 * (reach + 0.15)
+      const x = f.x + along[0] * t - down[0] * 0.12 * random()
+      const z = f.z + along[1] * t - down[1] * 0.12 * random()
+      const r = (0.01 + 0.016 * random() * random()) * size
+      beads.push({ x, y: groundAt(world, x, z) + r * 0.4, z, r, order: random() })
+    }
+    return { kind: 'stray', colony: -1, index, center: [f.x, groundAt(world, f.x, f.z), f.z], radius: reach + 0.3, plates, beads, birth: 0 }
+  })
 }

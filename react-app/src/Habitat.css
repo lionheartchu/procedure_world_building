@@ -1,0 +1,47 @@
+/* The Habitat (/habitat): only the world, and a line of keys that fades. */
+
+.habitat {
+  background: #0b0e1e;
+  cursor: grab;
+}
+
+.habitat.presence-looking {
+  cursor: grabbing;
+}
+
+.habitat-keys {
+  position: absolute;
+  left: 50%;
+  bottom: calc(clamp(1rem, 2.5vw, 1.75rem) + env(safe-area-inset-bottom, 0px));
+  z-index: 4;
+  margin: 0;
+  padding: 0 16px;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  text-align: center;
+  font-family: var(--body);
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  color: rgba(214, 208, 238, 0.62);
+  pointer-events: none;
+  transition: opacity 2.4s ease;
+}
+
+.habitat-keys.is-quiet {
+  opacity: 0;
+}
+
+.habitat-title {
+  position: absolute;
+  top: calc(clamp(1rem, 2.5vw, 1.75rem) + env(safe-area-inset-top, 0px));
+  left: 16px;
+  z-index: 4;
+  margin: 0;
+  font-family: var(--body);
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(214, 208, 238, 0.42);
+  pointer-events: none;
+}

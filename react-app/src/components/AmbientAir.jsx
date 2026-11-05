@@ -46,6 +46,8 @@ const TRIES = 8
 const SIMULATE = /* glsl */ `
   uniform float uDelta;
   uniform sampler2D uTraits;
+  // The volume's middle (xz): the origin, or the visitor when it follows them.
+  uniform vec2 uCentre;
   ${AIR_GLSL}
 
   float hash12(vec2 p) {
@@ -86,7 +88,7 @@ const SIMULATE = /* glsl */ `
       float best = -1.0;
       for (int k = 0; k < ${TRIES}; k++) {
         float ek = e + float(k) * 7.31;
-        vec2 c = (vec2(hash12(uv * 113.1 + ek), hash12(uv * 71.7 + ek + 5.3)) - 0.5) * ${(2 * AIR.halfWidth).toFixed(1)};
+        vec2 c = uCentre + (vec2(hash12(uv * 113.1 + ek), hash12(uv * 71.7 + ek + 5.3)) - 0.5) * ${(2 * AIR.halfWidth).toFixed(1)};
         // A little more matter is born around colonies.
         float d = min(1.0, airDensity(c, uTime) + 0.6 * colonyNear(vec3(c.x, airFloor(c) + 0.5, c.y)));
         if (d > best) { best = d; xz = c; }
@@ -97,7 +99,7 @@ const SIMULATE = /* glsl */ `
     } else {
       p += airVelocity(p, pref) * uDelta;
       float W = ${AIR.halfWidth.toFixed(1)};
-      p.xz = mod(p.xz + W, 2.0 * W) - W;
+      p.xz = mod(p.xz - uCentre + W, 2.0 * W) - W + uCentre;
       p.y = min(p.y, ${AIR.top.toFixed(1)});
     }
     gl_FragColor = vec4(p, life);
@@ -133,6 +135,7 @@ const SIMULATE = /* glsl */ `
 const POINT_VERTEX = /* glsl */ `
   ${AIR_GLSL}
   attribute vec2 aRef;
+  uniform vec2 uCentre;
   uniform sampler2D uPositions;
   uniform sampler2D uTraits;
   uniform float uScale;
@@ -234,7 +237,7 @@ const POINT_VERTEX = /* glsl */ `
     }
     alpha *= exp(-${FOG} * ${FOG} * dist * dist);
     // Fade at the volume's sides, where grains wrap, and at birth and death.
-    vec2 side = abs(p.xz);
+    vec2 side = abs(p.xz - uCentre);
     alpha *= 1.0 - smoothstep(${(AIR.halfWidth - 3).toFixed(1)}, ${AIR.halfWidth.toFixed(1)}, max(side.x, side.y));
     alpha *= smoothstep(0.0, 0.12, s.w) * (1.0 - smoothstep(0.85, 1.0, s.w));
 
@@ -318,12 +321,24 @@ export default function AmbientAir({
   colonies,
   blooms,
   haze,
+  // The air's own skins (AirFragments). The Habitat leaves them out, so the
+  // only films in its air are the lifecycle's, carrying matter.
+  fragments = true,
+  // The ground's extent (units), and whether the volume follows the visitor
+  // (a world wider than the volume: the Habitat's D). The same grains either
+  // way; following, the colonies it holds are the visitor's nearest.
+  fieldSize = 26,
+  follow = false,
+  // The Habitat's M2: the commons' cue drawn in the wisps (AirWisps `cue`),
+  // and (following) the wisps' colony air at the visitor's nearest colonies.
+  cue = null,
+  wispFollow = false,
 }) {
   const gl = useThree((s) => s.gl)
   const size = useThree((s) => s.size)
   const camera = useThree((s) => s.camera)
 
-  const floor = useMemo(() => makeFloor(field, { size: 26, elevation, waterLevel }), [field, elevation, waterLevel])
+  const floor = useMemo(() => makeFloor(field, { size: fieldSize, elevation, waterLevel }), [field, fieldSize, elevation, waterLevel])
   const floorTexture = useMemo(() => {
     const data = new Uint8Array(floor.n * floor.n * 4)
     for (let i = 0; i < floor.n * floor.n; i++) {
@@ -437,7 +452,10 @@ export default function AmbientAir({
   )
 
   // The colonies as the air sees them (phase 3): their membranes and bounds.
-  const colonyData = useMemo(() => colonyAirData(colonies, blooms), [colonies, blooms])
+  const allColonyData = useMemo(() => colonyAirData(colonies, blooms), [colonies, blooms])
+  // Following: the nearest, chosen again every few seconds.
+  const nearColonies = useRef({ at: -Infinity, data: null })
+  const colonyData = allColonyData
   const footprints = useMemo(() => (DEBUG ? obstacleOutlines(colonyData) : null), [colonyData])
   const arrows = useMemo(() => (DEBUG ? flowArrows() : null), [])
 
@@ -447,10 +465,20 @@ export default function AmbientAir({
     if (!sim) return
     const dt = Math.min(delta, 0.05)
     time.current += dt
-    const state = { t: time.current, drift, curl, floor, floorTexture, colonyData, colony }
+    let held = colonyData
+    if (follow) {
+      const near = nearColonies.current
+      if (time.current - near.at > 2) {
+        near.at = time.current
+        near.data = colonyAirData(colonies, blooms, { near: [camera.position.x, camera.position.z] })
+      }
+      held = near.data
+    }
+    const state = { t: time.current, drift, curl, floor, floorTexture, colonyData: held, colony }
 
     const u = sim.variable.material.uniforms
     setAir(u, state)
+    if (follow) u.uCentre.value.set(camera.position.x, camera.position.z)
     u.uDelta.value = dt
     sim.gpu.compute()
 
@@ -458,6 +486,7 @@ export default function AmbientAir({
 
     const pu = points.material.uniforms
     setAir(pu, state)
+    if (follow) pu.uCentre.value.set(camera.position.x, camera.position.z)
     pu.uPositions.value = sim.gpu.getCurrentRenderTarget(sim.variable).texture
     const dpr = gl.getPixelRatio()
     pu.uScale.value = (size.height * dpr) / (2 * Math.tan((camera.fov * Math.PI) / 360))
@@ -483,8 +512,10 @@ export default function AmbientAir({
         colonyData={colonyData}
         colony={colony}
         debug={DEBUG}
+        cue={cue}
+        colonyRef={wispFollow && follow ? nearColonies : null}
       />
-      <AirFragments floor={floor} time={time} drift={drift} curl={curl} colonyData={colonyData} colony={colony} />
+      {fragments && <AirFragments floor={floor} time={time} drift={drift} curl={curl} colonyData={colonyData} colony={colony} />}
     </group>
   )
 }
@@ -500,6 +531,7 @@ function airUniforms() {
     uFloorSpan: { value: 1 },
     uFieldSize: { value: 26 },
     uWaterY: { value: 0 },
+    uCentre: { value: new THREE.Vector2() },
     ...colonyAirUniforms(),
   }
 }
@@ -512,6 +544,7 @@ function setAir(u, { t, drift, curl, floor, floorTexture, colonyData, colony }) 
   u.uFloorMin.value = floor.min
   u.uFloorSpan.value = floor.max - floor.min
   u.uWaterY.value = floor.waterY
+  u.uFieldSize.value = floor.size
   setColonyAir(u, colonyData, colony)
 }
 

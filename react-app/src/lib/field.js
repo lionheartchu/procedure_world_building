@@ -88,16 +88,34 @@ export function createField({
   detailAmount,
   shaping,
   shapingAmount,
+  // An operation of the caller's own (the Habitat's spatial studies), in
+  // SHAPING_OPS' form; the studies' menus never see it.
+  shapingOp = null,
+  // The Habitat's D: the landform drawn out along one direction ({ ratio,
+  // angle }: ratio < 1 lengthens its forms along `angle`), as bars and
+  // channels lie along the way water runs. The detail stays round.
+  stretch = null,
 }) {
   const landformNoise = makeSimplex2(seed)
   const detailNoise = makeSimplex2(seed + 977)
-  const op = SHAPING_OPS[shaping] ?? SHAPING_OPS.raw
+  const op = shapingOp ?? SHAPING_OPS[shaping] ?? SHAPING_OPS.raw
 
   // Layer B never fully takes over layer A; it stays a modifier on the landform.
   const blend = detailAmount * 0.45
+  const ca = stretch ? Math.cos(stretch.angle) : 1
+  const sa = stretch ? Math.sin(stretch.angle) : 0
+  const along = stretch ? stretch.ratio : 1
 
   function sample(u, v) {
-    const a = fbm(landformNoise, u * landformScale, v * landformScale, 4) * 0.5 + 0.5
+    let lu = u
+    let lv = v
+    if (stretch) {
+      const x = u - 0.5
+      const y = v - 0.5
+      lu = (x * ca + y * sa) * along + 0.5
+      lv = -x * sa + y * ca + 0.5
+    }
+    const a = fbm(landformNoise, lu * landformScale, lv * landformScale, 4) * 0.5 + 0.5
     const b = fbm(detailNoise, u * detailScale, v * detailScale, 4) * 0.5 + 0.5
     const raw = a * (1 - blend) + b * blend
     return op.apply(clamp01(raw), shapingAmount)
@@ -140,10 +158,13 @@ export const RELIEF = {
   blur: 2,
 }
 
-export function withRelief(field, { waterLevel, seed, amount = 1 }) {
+export function withRelief(field, { waterLevel, seed, amount = 1, shape = null }) {
   const levels = makeSimplex2(seed + 4241)
   const pillows = makeSimplex2(seed + 5179)
-  const R = RELIEF
+  // `shape`: some of RELIEF's own values, the caller's (the Habitat's D
+  // lowers `deepen` and `shelf`, so the ground runs on into the shallows
+  // instead of stepping down off the shore).
+  const R = shape ? { ...RELIEF, ...shape } : RELIEF
   const smooth = smoothCopy(field, R.grid, R.blur)
 
   function sample(u, v) {

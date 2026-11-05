@@ -522,6 +522,8 @@ export default function AirHaze({ floor, floorTexture, time, drift, amount }) {
     u.uFloorMin.value = floor.min
     u.uFloorSpan.value = floor.max - floor.min
     u.uWaterY.value = floor.waterY
+    // The floor's own extent: 26 units, or a wider world's (the Habitat's D).
+    u.uFieldSize.value = floor.size ?? 26
     u.uAmount.value = amount
     u.uInvProj.value.copy(camera.projectionMatrixInverse)
     u.uCamWorld.value.copy(camera.matrixWorld)

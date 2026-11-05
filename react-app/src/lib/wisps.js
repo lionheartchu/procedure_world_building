@@ -43,6 +43,13 @@ export const WISPS = {
   warmupStep: 0.2,
 }
 
+/**
+ * The Habitat's M2: the cue in the wisps (WISPS_GLSL `CUE`). Slots: the last
+ * region's release points, moved to recent release sites; puffs: the cue's
+ * strongest, passed each frame; `ref`, the cue that stains fully.
+ */
+export const WISP_CUE = { slots: WISPS.sources, puffs: 32, ref: 0.0015, near: 16, recent: 34 }
+
 /** Release points: the regions' first, then the colonies'. */
 export const SOURCES = WISPS.regions * WISPS.sources + WISPS.colonies * WISPS.perColony
 
@@ -72,6 +79,44 @@ export const WISPS_GLSL = /* glsl */ `
   float wHash(float n) {
     return fract(sin(n * 12.9898 + 4.1414) * 43758.5453);
   }
+
+  #ifdef CUE
+  // The Habitat's M2 (WISP_CUE below): the commons' cue (lib/morph.js) in
+  // the wisps. The last region's release points (not shown at the default
+  // Wisps amount) are moved to where films have lately come away near the
+  // visitor: x, height over the floor, z, and how much cue is leaving there
+  // now (0..1). And the cue itself, its strongest puffs: x, z, radius,
+  // strength, and how far each has travelled (0..1).
+  uniform vec4 uCueSlot[${7}];
+  uniform vec4 uCuePuff[${32}];
+  uniform float uCueTravelled[${32}];
+  uniform float uCueRef;
+  uniform float uCueTime;
+  uniform float uCueCarry;
+  uniform float uCueHeight;
+  bool cueSource(float s) {
+    return s > REGION_SOURCES - SOURCES_PER_REGION - 0.5 && s < REGION_SOURCES - 0.5;
+  }
+  vec4 cueSlot(float s) {
+    int k = int(s - (REGION_SOURCES - SOURCES_PER_REGION) + 0.5);
+    return uCueSlot[k];
+  }
+  // The simulated cue at xz (strength), and how far its strongest part has
+  // travelled there (for its colour).
+  vec2 cueAt(vec2 xz) {
+    float c = 0.0;
+    float t = 0.0;
+    for (int i = 0; i < ${32}; i++) {
+      vec4 q = uCuePuff[i];
+      if (q.w <= 0.0) continue;
+      vec2 d = (xz - q.xy) / q.z;
+      float v = q.w * exp(-dot(d, d));
+      c += v;
+      t += v * uCueTravelled[i];
+    }
+    return vec2(c, c > 1e-9 ? t / c : 0.0);
+  }
+  #endif
 
   bool colonySource(float s) {
     return s > REGION_SOURCES - 0.5;
@@ -103,6 +148,10 @@ export const WISPS_GLSL = /* glsl */ `
   // Release point s: where in its region (mostly upwind of the centre), how
   // high over the ground, and a slow wander of its own.
   vec3 sourcePlace(float s, float t) {
+    #ifdef CUE
+    // Where a film lately came away (the slot's place now).
+    if (cueSource(s)) return cueSlot(s).xyz;
+    #endif
     if (colonySource(s)) {
       // Upwind of its colony along the air that will actually reach it:
       // traced back from a point across the colony's width, so the band
@@ -136,6 +185,10 @@ export const WISPS_GLSL = /* glsl */ `
 
   // Release comes in puffs: 0 between, 1 at full flow.
   float release(float s, float t) {
+    #ifdef CUE
+    // As much as the cue leaving there now.
+    if (cueSource(s)) return cueSlot(s).w;
+    #endif
     float w1 = 0.045 + 0.05 * wHash(s * 2.9);
     float w2 = 0.11 + 0.05 * wHash(s * 6.7);
     float a = (0.5 + 0.5 * sin(t * w1 + s * 3.3)) * (0.55 + 0.45 * sin(t * w2 + s * 1.9));
@@ -146,6 +199,10 @@ export const WISPS_GLSL = /* glsl */ `
   // How widely residue is released: breathing between a thin trace and a spread.
   float spread(float s, float t) {
     float b = pow(0.5 + 0.5 * sin(t * (0.05 + 0.04 * wHash(s * 8.3)) + s * 4.1), 2.0);
+    #ifdef CUE
+    // From the sheet it left: a narrow start that the air then draws out.
+    if (cueSource(s)) return 0.12 + 0.1 * b;
+    #endif
     // A colony's incoming air is released as narrow filaments, like smoke
     // in a wind tunnel, so it shows how the air goes round the forms: soft
     // bands rather than drawn lines, which is how they read from afar.
@@ -157,6 +214,10 @@ export const WISPS_GLSL = /* glsl */ `
   }
 
   float sourcePeriod(float s) {
+    #ifdef CUE
+    // Short-lived: it shows the last half minute of where the cue went.
+    if (cueSource(s)) return 26.0 + 6.0 * wHash(s * 4.93);
+    #endif
     return colonySource(s) ? 75.0 + 20.0 * wHash(s * 4.93) : 70.0 + 30.0 * wHash(s * 4.93);
   }
 
