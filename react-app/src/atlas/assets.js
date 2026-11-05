@@ -50,6 +50,7 @@ import ratte2 from '../../../docs/references/Plane of Incidence2.png'
 import journey from '../../../docs/references/journey.jpg'
 import abzu from '../../../docs/references/abzu2.webp'
 import ephemeral from '../../../docs/references/The Ephemeral Lake.webp'
+import hylozoic from '../../../docs/references/Hylozoic Ground.png'
 // The portal's five chapter illustrations: tightly cropped, web-sized copies of the
 // originals in docs/references/atlas-layout (kept unchanged there).
 import worldIllustration from './portal/world.webp'
@@ -396,7 +397,7 @@ export const ASSETS = {
     size: [1818, 1022],
     kind: 'external',
     doc: 'references',
-    credit: 'Sabrina Ratté, Plane of Incidence',
+    credit: 'Sabrina Ratté, Plane of Incidence (2024)',
     alt: 'Sabrina Ratté, Plane of Incidence',
     caption: 'Kept for translucent, ambiguous materiality, and forms continuous with their surroundings. The primary visual inspiration.',
   },
@@ -405,7 +406,7 @@ export const ASSETS = {
     size: [600, 338],
     kind: 'external',
     doc: 'references',
-    credit: 'Sabrina Ratté, Plane of Incidence',
+    credit: 'Sabrina Ratté, Plane of Incidence (2024)',
     alt: 'Sabrina Ratté, Plane of Incidence',
     caption: 'Accumulated organic structures and rich micro-detail.',
   },
@@ -414,8 +415,8 @@ export const ASSETS = {
     size: [2499, 1406],
     kind: 'external',
     doc: 'references',
-    credit: 'The Ephemeral Lake (artist not recorded)',
-    alt: 'The Ephemeral Lake',
+    credit: 'Jakob Kudsk Steensen, The Ephemeral Lake (2024)',
+    alt: 'Jakob Kudsk Steensen, The Ephemeral Lake',
     caption: 'Kept for traces of time: a form and its environment, read together.',
   },
   journey: {
@@ -423,16 +424,25 @@ export const ASSETS = {
     size: [1280, 720],
     kind: 'external',
     doc: 'references',
-    credit: 'Journey, thatgamecompany',
+    credit: 'Journey, thatgamecompany (2012)',
     alt: 'Journey, thatgamecompany',
     caption: 'Kept for atmosphere only: luminous water and air. Not its cyan palette.',
+  },
+  hylozoic: {
+    src: hylozoic,
+    size: [1400, 550],
+    kind: 'external',
+    doc: 'references',
+    credit: 'Philip Beesley, Hylozoic Ground (2010)',
+    alt: 'Philip Beesley, Hylozoic Ground',
+    caption: 'Kept for an environment that senses visitors and responds.',
   },
   abzu: {
     src: abzu,
     size: [1024, 576],
     kind: 'external',
     doc: 'references',
-    credit: 'ABZÛ, Giant Squid',
+    credit: 'ABZÛ, Giant Squid (2016)',
     alt: 'ABZÛ, Giant Squid',
     caption: 'Kept for atmosphere only: immersion, depth and wonder.',
   },

@@ -440,3 +440,31 @@ committed locally (not pushed or deployed):
   rendering.
 - On phones the atmospheric layer (plane, reflections, residue) is left
   out.
+
+## Fragments revision, 27 October 2026
+
+The Fragments chapter now makes the research legible in three sections,
+before its proposals, set-aside passes and possibilities (kept as they
+were):
+- **Artistic and experiential precedents:** five external works, each with
+  what was observed in it and what it was translated into.
+  - Ratté, Steensen, *Journey* and *ABZÛ* use the images already in
+    `docs/references/`.
+  - *Hylozoic Ground* has no image in the project, and says so in its place.
+- **Biological and systems research:** mycelial networks and *Turritopsis
+  dohrnii*, as in [study 10](10-lifecycle-concept.md#biological-references-mechanisms-not-visual-instructions),
+  each with what was borrowed and what is not claimed, and the study's five
+  sources.
+- **From reference to design:** reference → observed principle → design
+  translation → status (implemented, bounded demo, paused, experimental,
+  proposed), each row citing its study.
+
+**Credits corrected and verified:**
+- *The Ephemeral Lake* is by Jakob Kudsk Steensen (2024; it was "artist not
+  recorded").
+- Years were added for Ratté (2024), *Journey* (2012) and *ABZÛ* (2016).
+- *Hylozoic Ground*: Philip Beesley, Canada Pavilion, Venice Architecture
+  Biennale 2010.
+
+The archive no longer repeats references now shown in the chapter.
+`docs/references/README.md` records the same.

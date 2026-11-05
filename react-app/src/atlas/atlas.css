@@ -1093,6 +1093,177 @@
   margin-top: clamp(2rem, 5vw, 4.5rem);
 }
 
+/* Fragments: precedents, two to a row as in a collection, each with what
+   was observed in it and what it was translated into. */
+.precedents {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(2rem, 4vw, 3.2rem) clamp(1.2rem, 3vw, 2.6rem);
+  align-items: start;
+}
+
+.precedent-empty {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 5;
+  border: 1px dashed rgba(41, 37, 74, 0.3);
+  font-family: var(--sans);
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.precedent-name {
+  color: var(--ink);
+}
+
+.precedent-name cite,
+.translation-reference {
+  font-style: italic;
+}
+
+.precedent-where {
+  color: var(--ink-2);
+}
+
+.precedent-notes {
+  display: grid;
+  grid-template-columns: 6.2rem minmax(0, 1fr);
+  gap: 0.35rem 0.8rem;
+  max-width: 34rem;
+  margin: 0.7rem 0 0;
+}
+
+.precedent-notes dt {
+  padding-top: 0.28rem;
+  font-family: var(--sans);
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.precedent-notes dd {
+  margin: 0;
+  font-size: 1.02rem;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+/* Fragments: research, compact, two side by side. */
+.research {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(1.5rem, 4vw, 4rem);
+}
+
+.research-item h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.32rem;
+  font-weight: 400;
+}
+
+.research-aside {
+  font-size: 1.02rem;
+  color: var(--ink-3);
+}
+
+.research-basis {
+  margin: 0;
+  font-size: 1.04rem;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.research-item .atlas-docref {
+  display: inline-block;
+  margin-top: 0.8rem;
+}
+
+.research-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.1rem;
+  max-width: 64rem;
+  margin: 1.6rem 0 0;
+}
+
+.research-sources-label {
+  font-family: var(--sans);
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding-top: 0.12rem;
+}
+
+/* Fragments: from reference to design, one row each. */
+.translation {
+  max-width: 72rem;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.translation li {
+  display: grid;
+  grid-template-columns: minmax(8rem, 0.75fr) minmax(0, 1fr) minmax(0, 1.25fr) 12.5rem;
+  gap: 1.2rem;
+  align-items: baseline;
+  padding: 0.9rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.translation li.translation-head {
+  padding: 0 0 0.5rem;
+  font-family: var(--sans);
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.translation-reference {
+  font-size: 1.2rem;
+}
+
+.translation-reference.is-plain {
+  font-style: normal;
+}
+
+.translation-principle {
+  font-size: 1.02rem;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+.translation-design {
+  font-size: 1.06rem;
+  line-height: 1.45;
+}
+
+.translation-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.status-state.state-implemented {
+  border-color: rgba(95, 88, 153, 0.75);
+  background: rgba(95, 88, 153, 0.18);
+}
+
+.status-state.state-bounded-demo,
+.status-state.state-experimental {
+  background: rgba(95, 88, 153, 0.1);
+}
+
+.status-state.state-paused {
+  border-style: dotted;
+}
+
 .fine-list {
   max-width: 46rem;
   margin: 0.4rem 0 0;
@@ -1365,6 +1536,36 @@
   .status-list li {
     grid-template-columns: 1fr;
     gap: 0.4rem;
+  }
+
+  .precedents,
+  .research {
+    grid-template-columns: 1fr;
+  }
+
+  .precedents > :nth-child(2) {
+    margin-top: 0;
+  }
+
+  .translation li {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+  }
+
+  .translation li.translation-head {
+    display: none;
+  }
+
+  .translation-principle::before,
+  .translation-design::before {
+    content: attr(data-label);
+    display: inline-block;
+    width: 5.6rem;
+    font-family: var(--sans);
+    font-size: 0.58rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
   }
 
   .studies li {
