@@ -241,6 +241,50 @@ over time. They are not geometry to reproduce.
 - **An autonomous world:** visitor presence stays a limited, local
   influence.
 
+### Next: residual morphogenesis (after the M3E checkpoint)
+
+Adopted on 10 November 2026, with M3E (`0423401`) as the checkpoint. The
+framing is in
+[`PROJECT_DIRECTION.md`](PROJECT_DIRECTION.md#november-2026-what-disappears-still-participates).
+These are directions to explore, not specifications. No resident form or
+final structure is prescribed: the morphology should come from local
+relationships.
+
+**Distributed perception → behavioural response → accumulated morphology.**
+
+Questions:
+- **Perception:** what can a resident perceive where it stands?
+- **Influences:** how do air, water, terrain, light and its neighbours
+  bear on what it does?
+- **Influence between residents:** how can an event in one affect others,
+  with nothing in control?
+- **Growth conditions:** how can residue and the world's recorded history
+  change what grows next?
+- **Accumulation:** how can local changes add up to visible, shared spatial
+  forms?
+
+Candidate first steps, smallest first:
+- **A perception readout.** Each resident's local readings, shown in the
+  development inspector: the air at its crest, water or damp ground near it,
+  the light held in the ground, its neighbours, the cue it has gathered. No
+  behaviour changes; it shows what could be responded to.
+- **One display-only record made functional, behind a flag.** The cue's
+  `passage` grid is recorded but read by nothing. Letting it bias where new
+  residents can form would be the first trace that shapes later growth
+  beyond the residue itself. Compare it against the baseline by the
+  lifecycle's own hash and ledger.
+- **Light as an input.** An ambient illumination cycle, with no literal
+  sun, that residents could perceive.
+
+Lenses for review:
+- **Mycelium, as behaviour** (study 10's paused tissue): local sensing,
+  distributed growth, branching, redistribution of resources, reinforcement
+  by use, dormancy. Never its look.
+- **Genotype, phenotype, fitness** (from the procedural creature lecture): a
+  way to describe what a resident is (its parameters), what it becomes
+  (its form in a place) and what persists. Evolutionary optimisation and
+  inheritance are possibilities for later, not requirements now.
+
 ## Deferred or superseded
 
 - **Branching and tissue (study 08): kept as an exploratory close-range

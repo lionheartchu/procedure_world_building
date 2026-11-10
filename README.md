@@ -186,6 +186,8 @@ deployed.
 
 ## Studies
 
+**Presentation notes (November 2026):** [`docs/presentation/`](docs/presentation/README.md): the research overview, slide sequence, curated images, and what can be demonstrated at the M3E checkpoint.
+
 | | Study | What it explores | Status |
 |---|---|---|---|
 | 01 | [Noise / height field](docs/01-noise-study.md) | A landform from one continuous function, as map and mesh | Done |
