@@ -75,12 +75,14 @@ export class Membrane {
    * @param foot       the height of its foot (y)
    * @param height     its height (units)
    */
-  constructor({ positions, foot, height }) {
-    this.proxy = formProxy(positions)
+  constructor({ positions, foot, height, size = 26, E = ENCOUNTER }) {
+    /** Its response (ENCOUNTER; a resident's own, M3E). */
+    this.E = E
+    this.proxy = formProxy(positions, { size })
     this.foot = foot
     this.height = height
-    this.max = clamp(ENCOUNTER.depth * height, ENCOUNTER.least, ENCOUNTER.most)
-    this.footSpan = ENCOUNTER.foot * height
+    this.max = clamp(E.depth * height, E.least, E.most)
+    this.footSpan = E.foot * height
     /** The dent: depth at its centre (positive away from the visitor), and its rate. */
     this.depth = 0
     this.rate = 0
@@ -97,14 +99,14 @@ export class Membrane {
 
   /** The dent's radius now. */
   get radius() {
-    return ENCOUNTER.radius + ENCOUNTER.spread * Math.max(0, this.depth)
+    return this.E.radius + this.E.spread * Math.max(0, this.depth)
   }
 
   /** How much of the dent reaches the sheet's point (x, y, z), as built: 1 at its centre. (The shader's ENCOUNTER block is the same.) */
   weightAt(x, y, z) {
     const R = this.radius
     const d2 = (x - this.at[0]) ** 2 + (y - this.at[1]) ** 2 + (z - this.at[2]) ** 2
-    const lean = ENCOUNTER.bend * smoothstep(this.foot, this.foot + this.height, y)
+    const lean = this.E.bend * smoothstep(this.foot, this.foot + this.height, y)
     return Math.min(1, Math.exp(-d2 / (R * R)) + lean) * smoothstep(this.foot, this.foot + this.footSpan, y)
   }
 
@@ -121,7 +123,7 @@ export class Membrane {
    * whether it is near enough to matter.
    */
   meet(p, v, dt) {
-    const E = ENCOUNTER
+    const E = this.E
     const reach = PRESENCE.reach
     const h = this.proxy.nearest(p[0], p[1], p[2], reach + E.cushion + this.max, this.hit)
     if (!h) {
@@ -166,7 +168,11 @@ export class Membrane {
     // Pressing in: the sheet takes its share of the press as depth (and of
     // the speed as its own movement), the visitor is held at the rest.
     const gap = h.d - allowed
-    if (gap < 0) {
+    if (gap < 0 && E.pressOnly && into <= 0.02) {
+      // (M3E's residents: not pressed, the sheet's own return moves the
+      // visitor out; a still visitor no longer holds it deep.)
+      for (let i = 0; i < 3; i++) p[i] += n[i] * -gap
+    } else if (gap < 0) {
       const press = -gap
       const give = E.give * (1 - stiff)
       const wEff = Math.max(w, 0.35)
@@ -198,7 +204,7 @@ export class Membrane {
 
   /** The sheet's own movement, once per frame: it springs back toward rest. */
   update(dt) {
-    const E = ENCOUNTER
+    const E = this.E
     const w = 2 * Math.PI * E.hz
     // Two half steps keep the spring steady at long frames.
     const h = Math.min(dt, 0.05) / 2
@@ -220,3 +226,146 @@ export class Membrane {
     }
   }
 }
+
+/**
+ * M3E (docs/22-habitat-m3e.md): the encounter with a lifecycle resident.
+ * Not one placed veil but whichever standing resident (forming, holding or
+ * receding) the visitor comes near, one at a time, met as the Membrane
+ * above is met: one dent on a spring, the visitor held at the displaced
+ * surface. Two things are its own:
+ *
+ *   - its surface is the resident as drawn now (its growth and posture,
+ *     LifecycleLayer `poseFilm`), rebuilt as it changes, and met where its
+ *     air has bent it; so what stops the visitor is what they see
+ *   - how it yields is its state: its tension, from the matter its body
+ *     holds against a full body for its height, as far as its stage keeps it
+ *     (forming, still taking up; holding, all of it; receding, less as it
+ *     lies down). Slack, it takes a press deep and slowly, and comes back
+ *     without springing past rest; taut, it gives little and quickly, and
+ *     springs back once
+ *
+ * It reads the resident and the visitor, and writes nothing the lifecycle
+ * reads: no stage, matter, timing or film changes with it.
+ */
+export const RESIDENT = {
+  /** A standing resident within this distance of the visitor (units, from near its foot) is the one met. */
+  near: 1.6,
+  /** The stages in which a resident stands to be met. */
+  stages: ['forming', 'holding', 'receding'],
+  /** The response, slack (tension 0) to taut (1); the rest is ENCOUNTER's. */
+  /** It yields only while pressed; when the visitor stops, its return moves them out (Membrane `meet`). */
+  pressOnly: true,
+  /**
+   * The response, slack to taut; the rest is ENCOUNTER's. Slack: a press goes
+   * deep and the sheet bends with it as a whole, and comes back slowly
+   * without passing rest. Taut: it gives little, quickly, and springs back
+   * once. Either way the visitor walks up to it (a short cushion, not the
+   * placed veil's long one) and can press it.
+   */
+  slack: { depth: 0.6, hz: 0.24, damping: 1.0, give: 0.98, rebound: 0.0, bend: 1.0, shear: 0.5, cushion: 0.2, ease: 0.3, held: 0.9, least: 0.08, most: 0.36 },
+  taut: { depth: 0.3, hz: 0.95, damping: 0.32, give: 0.82, rebound: 0.35, bend: 0.6, shear: 0.25, cushion: 0.2, ease: 0.3, held: 0.9, least: 0.08, most: 0.36 },
+  /** The tensions that count as slack and as taut (a resident's matter rarely leaves this range). */
+  range: [0.3, 0.85],
+}
+
+/** A resident's tension (0 slack .. 1 taut): its matter against a full body, as far as its stage holds it. */
+export function tensionOf(r, bodyPerHeight, lies) {
+  const fill = clamp(r.body / (bodyPerHeight * r.desc.height), 0, 1)
+  const stage = r.stage === 'forming' ? 0.55 : r.stage === 'holding' ? 1 : r.stage === 'receding' ? 1 - clamp(r.recline / lies, 0, 1) : 0
+  return fill * stage
+}
+
+export class ResidentEncounter extends Membrane {
+  constructor({ world }) {
+    super({ positions: [], foot: 0, height: 1, size: world.size })
+    this.size = world.size
+    /** The resident met now, and its tension. */
+    this.resident = null
+    this.tension = 0
+    /** Its air's bend (the form shader's uWind: displacement at its crest, and its height), and its foot. */
+    this.wind = [0, 0, 0, 1]
+    this.base = [0, 0, 0]
+    /** Whether the resident's surface has been given since it was chosen. */
+    this.ready = false
+  }
+
+  /** Its response for a tension (0..1). */
+  respond(tension) {
+    this.tension = tension
+    const k = smoothstep(RESIDENT.range[0], RESIDENT.range[1], tension)
+    const E = { ...ENCOUNTER, pressOnly: RESIDENT.pressOnly }
+    for (const key in RESIDENT.slack) E[key] = RESIDENT.slack[key] + (RESIDENT.taut[key] - RESIDENT.slack[key]) * k
+    this.E = E
+    this.max = clamp(E.depth * this.height, E.least, E.most)
+    this.footSpan = E.foot * this.height
+  }
+
+  /** At rest: a new resident may be chosen. */
+  get resting() {
+    return !this.touching && Math.abs(this.depth) < 0.01 && Math.abs(this.rate) < 0.05
+  }
+
+  /**
+   * Which resident is met, from where the visitor is (p): the nearest
+   * standing one within reach; another only once the last has come to rest.
+   */
+  choose(p, lifecycles) {
+    let best = null
+    let bestD = RESIDENT.near
+    for (const life of lifecycles) {
+      for (const r of life.residents) {
+        if (!RESIDENT.stages.includes(r.stage) || r.desc.height * r.unfold < 0.08) continue
+        const x = r.desc.p[0] + Math.cos(r.desc.lean) * 0.2
+        const z = r.desc.p[2] + Math.sin(r.desc.lean) * 0.2
+        const d = Math.hypot(p[0] - x, p[2] - z)
+        if (d < bestD) {
+          bestD = d
+          best = r
+        }
+      }
+    }
+    // The one met stays met while it stands and the visitor is near it.
+    const current = this.resident
+    if (current && RESIDENT.stages.includes(current.stage) && Math.hypot(p[0] - current.desc.p[0], p[2] - current.desc.p[2]) < RESIDENT.near + 0.4) return
+    if (best === current || !this.resting) return
+    this.resident = best
+    this.ready = false
+    this.depth = 0
+    this.rate = 0
+    this.shear = [0, 0, 0]
+    this.proxy = formProxy([], { size: this.size })
+  }
+
+  /** The chosen resident's film as drawn now, before its air (world positions), its foot and its height. */
+  surface(r, positions, foot, height) {
+    if (r !== this.resident) return
+    this.proxy = formProxy([positions], { size: this.size })
+    this.foot = foot
+    this.height = Math.max(height, 0.05)
+    this.base = r.desc.p
+    this.ready = true
+    this.respond(this.tension)
+  }
+
+  /** The air bends the drawn sheet (the shader's WIND): met there. */
+  windAt(y) {
+    const hb = clamp((y - this.base[1]) / Math.max(this.wind[3], 0.05), 0, 1.4)
+    return [this.wind[0] * hb * hb, this.wind[2] * hb * hb]
+  }
+
+  meet(p, v, dt) {
+    if (!this.resident || !this.ready) {
+      this.touching = false
+      this.distance = Infinity
+      return false
+    }
+    const [wx, wz] = this.windAt(p[1])
+    const q = [p[0] - wx, p[1], p[2] - wz]
+    const near = super.meet(q, v, dt)
+    p[0] = q[0] + wx
+    p[1] = q[1]
+    p[2] = q[2] + wz
+    return near
+  }
+}
+

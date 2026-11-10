@@ -48,7 +48,7 @@ export const WISPS = {
  * region's release points, moved to recent release sites; puffs: the cue's
  * strongest, passed each frame; `ref`, the cue that stains fully.
  */
-export const WISP_CUE = { slots: WISPS.sources, puffs: 32, ref: 0.0015, near: 16, recent: 34 }
+export const WISP_CUE = { slots: WISPS.sources, puffs: 32, ref: 0.0015, near: 16, recent: 34, visible: 46 }
 
 /** Release points: the regions' first, then the colonies'. */
 export const SOURCES = WISPS.regions * WISPS.sources + WISPS.colonies * WISPS.perColony
@@ -94,6 +94,7 @@ export const WISPS_GLSL = /* glsl */ `
   uniform float uCueTime;
   uniform float uCueCarry;
   uniform float uCueHeight;
+  uniform float uCueFilaments;
   bool cueSource(float s) {
     return s > REGION_SOURCES - SOURCES_PER_REGION - 0.5 && s < REGION_SOURCES - 0.5;
   }

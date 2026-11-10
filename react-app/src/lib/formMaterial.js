@@ -127,6 +127,22 @@ const VERTEX = /* glsl */ `
   // down (so the marks lie with it).
   varying vec3 vRest;
   #endif
+  #ifdef POSTURE
+  // The Habitat's M3R (lifecycle residents): its posture as one bend from
+  // its foot toward its lean, which keeps the sheet's length (the shear it
+  // replaces shortened a sheet by a third halfway down). The bend at the
+  // foot (radians) and how far up it builds (a share of the height: wide,
+  // the whole sheet sags; narrow, it hinges at its foot and lies flat), the
+  // crest's own fold (radians), and the sheet's height now. uTilt: the
+  // ground under it (its slope along x and z, and its height at the foot
+  // against uBase), so what lies down lies on that ground.
+  uniform vec4 uPosture;
+  uniform vec3 uTilt;
+  float postureAngle(float u) {
+    float H = max(uPosture.w, 0.05);
+    return uPosture.x * (1.0 - exp(-u / max(uPosture.y * H, 1e-3))) + uPosture.z * smoothstep(0.25 * H, H, u);
+  }
+  #endif
   #ifdef ENCOUNTER
   // The Habitat's encounter (lib/encounter.js): one membrane's dent. Its
   // displacement at the centre, the centre and radius, and the foot it is
@@ -176,6 +192,43 @@ const VERTEX = /* glsl */ `
     #ifdef RELEASE
     vRest = p;
     #endif
+    #ifdef POSTURE
+    if (uPosture.x != 0.0 || uPosture.z != 0.0) {
+      // The sheet as it stands, in its own frame: along its lean (a), across
+      // it (c), and its height above the foot (h). Each point goes to where
+      // the bent spine is at its height, its offset from the spine turned
+      // with it; its normal turns the same way.
+      vec3 q = p - uBase;
+      vec2 across = vec2(-uLean.y, uLean.x);
+      float a = dot(q.xz, uLean);
+      float c = dot(q.xz, across);
+      float h = max(q.y, 0.0);
+      float X = 0.0;
+      float Y = 0.0;
+      float du = h / 10.0;
+      for (int k = 0; k < 10; k++) {
+        float th = postureAngle((float(k) + 0.5) * du);
+        X += sin(th) * du;
+        Y += cos(th) * du;
+      }
+      float th = postureAngle(h);
+      float ct = cos(th);
+      float st = sin(th);
+      float A = X + a * ct;
+      vec3 r = vec3(uLean.x * A + across.x * c, Y - a * st + min(q.y, 0.0), uLean.y * A + across.y * c);
+      // Never into the ground it bends over (a plane at the ground's slope
+      // there), a little above the residue skin; what stood below the ground
+      // at rest (the foot's own seam) stays as deep as it was.
+      float groundRest = uTilt.z + dot(q.xz, uTilt.xy);
+      float groundNow = uTilt.z + dot(r.xz, uTilt.xy);
+      r.y = max(r.y, groundNow + min(0.03, q.y - groundRest));
+      p = uBase + r;
+      float na = dot(nrm.xz, uLean);
+      float nc = dot(nrm.xz, across);
+      float nA = na * ct + nrm.y * st;
+      nrm = normalize(vec3(uLean.x * nA + across.x * nc, -na * st + nrm.y * ct, uLean.y * nA + across.y * nc));
+    }
+    #else
     if (uRecline > 0.0) {
       // It folds over toward its lean about its base: its height goes into
       // its length, until it lies low on the ground as its own outline.
@@ -186,17 +239,22 @@ const VERTEX = /* glsl */ `
       p = uBase + q;
       nrm = normalize(mix(normal, vec3(0.0, 1.0, 0.0), 0.8 * uRecline));
     }
+    #endif
     #ifdef ENCOUNTER
     {
-      vec3 dd = position - uDentAt.xyz;
+      // Measured on the sheet as it stands now: as built (the placed veil),
+      // or as a resident's growth and posture have shaped it (M3E), which is
+      // the surface the visitor meets (lib/encounter.js).
+      vec3 q0 = p;
+      vec3 dd = q0 - uDentAt.xyz;
       float R2 = uDentAt.w * uDentAt.w;
       float local = exp(-dot(dd, dd) / R2);
-      float lean = uDentFoot.w * smoothstep(uDentFoot.x, uDentFoot.x + uDentFoot.z, position.y);
-      float wd = min(1.0, local + lean) * smoothstep(uDentFoot.x, uDentFoot.x + uDentFoot.y, position.y);
+      float lean = uDentFoot.w * smoothstep(uDentFoot.x, uDentFoot.x + uDentFoot.z, q0.y);
+      float wd = min(1.0, local + lean) * smoothstep(uDentFoot.x, uDentFoot.x + uDentFoot.y, q0.y);
       p += uDent * wd;
       vStretch = local * clamp(length(uDent) / 0.2, 0.0, 1.0);
       // The surface's normal tilts with the dent's slope, so its light follows.
-      vec3 grad = -2.0 * dd / R2 * local * smoothstep(uDentFoot.x, uDentFoot.x + uDentFoot.y, position.y);
+      vec3 grad = -2.0 * dd / R2 * local * smoothstep(uDentFoot.x, uDentFoot.x + uDentFoot.y, q0.y);
       vec3 along = grad - nrm * dot(grad, nrm);
       nrm = normalize(nrm - dot(uDent, nrm) * along);
     }
@@ -421,6 +479,12 @@ const FILM_FRAGMENT = /* glsl */ `
   // flare white and show its facets (docs/11-presence-study.md).
   uniform vec2 uNearFade;
   #endif
+  #ifdef NEAR_ALPHA
+  // The Habitat's M3R: a sheet close to the eye thins (to z of its opacity
+  // nearer than x units, fully itself beyond y), so passing by a membrane
+  // shows it as a film in front of the world, not a pale wall over it.
+  uniform vec3 uNearAlpha;
+  #endif
 
   #include <common>
   #include <fog_pars_fragment>
@@ -599,12 +663,16 @@ const FILM_FRAGMENT = /* glsl */ `
     // light in them builds up, as in layered tissue. (Premultiplied: the
     // material blends ONE, ONE_MINUS_SRC_ALPHA.)
     vec3 layered = emit * 0.2 + held;
+    float nearA = 1.0;
+    #ifdef NEAR_ALPHA
+    nearA = mix(uNearAlpha.z, 1.0, smoothstep(uNearAlpha.x, uNearAlpha.y, length(cameraPosition - vWorld)));
+    #endif
     // (uFade over 1, a D1 resident fuller than a placed veil, is capped short of opaque.)
-    gl_FragColor = vec4(lit + emit * 0.8, min(clamp(alpha, 0.0, 0.92) * uFade, 0.95));
+    gl_FragColor = vec4(lit + emit * 0.8, min(clamp(alpha, 0.0, 0.92) * uFade, 0.95) * nearA);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
     #include <fog_fragment>
-    vec3 add = layered * smoothstep(0.0, 0.15, alpha) * uFade;
+    vec3 add = layered * smoothstep(0.0, 0.15, alpha) * uFade * nearA;
     #ifdef TONE_MAPPING
       add = toneMapping(add);
     #endif
@@ -637,9 +705,9 @@ const FILM_FRAGMENT = /* glsl */ `
  *   halo      additive light on the terrain (now only the debug splines:
  *             the colony's light comes from accumulation.js instead)
  */
-export function createFormMaterial({ kind, tint = PALETTE.paleLavender, gain = 1, edgeGlow = 0.12, specular, body = 1, flow = 0, nearFade = null, encounter = false, filmGain = 1, spots = 1, light = null, wind = false, release = false, stain = false }) {
+export function createFormMaterial({ kind, tint = PALETTE.paleLavender, gain = 1, edgeGlow = 0.12, specular, body = 1, flow = 0, nearFade = null, encounter = false, filmGain = 1, spots = 1, light = null, wind = false, release = false, stain = false, age = false, posture = false, nearAlpha = null, live = null }) {
   if (kind === 'halo') return createHaloMaterial(tint)
-  if (kind === 'tissue') return withLight(createTissueMaterial(tint), light?.tissue)
+  if (kind === 'tissue') return withLight(createTissueMaterial(tint, { age }), light?.tissue)
   const film = kind === 'film'
   // The Habitat's options (off everywhere else, and then not compiled):
   // `nearFade` [from, to] units, films only; `encounter`, the dent.
@@ -663,6 +731,18 @@ export function createFormMaterial({ kind, tint = PALETTE.paleLavender, gain = 1
     defines.RELEASE = ''
     extra.uLeft = { value: Array.from({ length: 4 }, () => new THREE.Vector4()) }
     extra.uAcross = { value: new THREE.Vector2(1, 0) }
+  }
+  // The Habitat's M3R: `posture` (a lifecycle resident's bend from its foot,
+  // replacing the recline's shear) and `nearAlpha` [from, to, least], films
+  // only (a sheet near the eye thins).
+  if (posture) {
+    defines.POSTURE = ''
+    extra.uPosture = { value: new THREE.Vector4(0, 0.5, 0, 1) }
+    extra.uTilt = { value: new THREE.Vector3() }
+  }
+  if (nearAlpha && film) {
+    defines.NEAR_ALPHA = ''
+    extra.uNearAlpha = { value: new THREE.Vector3(...nearAlpha) }
   }
   if (encounter) {
     defines.ENCOUNTER = ''
@@ -710,7 +790,9 @@ export function createFormMaterial({ kind, tint = PALETTE.paleLavender, gain = 1
         uPale: hexUniform(PALETTE.paleLavender),
         uBright: hexUniform('#E2DEF6'),
         uRim: hexUniform('#A9B0E8'),
-        uMint: hexUniform(PALETTE.moonlitMint),
+        // The light of a live site (vLook.y, History's flow there): mint, or
+        // (M3E's `live`) the membranes' own pale tone.
+        uMint: hexUniform(live ?? PALETTE.moonlitMint),
         ...accumulationUniforms(),
         ...extra,
       },
@@ -859,6 +941,12 @@ const TISSUE_VERTEX = /* glsl */ `
   attribute vec2 aWarm;
   varying vec2 vWarm;
   #endif
+  #ifdef AGE
+  // The Habitat's M3: how long the matter here has lain (0 just arrived,
+  // 1 several minutes), from the lifecycle's own record of arrivals.
+  attribute float aAge;
+  varying float vAge;
+  #endif
 
   #include <common>
   #include <fog_pars_vertex>
@@ -866,6 +954,9 @@ const TISSUE_VERTEX = /* glsl */ `
   void main() {
     vGrow = smoothstep(aBirth.x, aBirth.x + aBirth.y, uGrowth);
     vLook = aLook;
+    #ifdef AGE
+    vAge = aAge;
+    #endif
     #ifdef WARM
     vWarm = aWarm;
     #endif
@@ -896,6 +987,9 @@ const TISSUE_FRAGMENT = /* glsl */ `
   varying vec3 vWorld;
   varying vec3 vNormal;
   varying vec2 vUv;
+  #ifdef AGE
+  varying float vAge;
+  #endif
 
   #include <common>
   #include <fog_pars_fragment>
@@ -949,8 +1043,22 @@ const TISSUE_FRAGMENT = /* glsl */ `
     float grain = valueNoise(vUv * 38.0) * 0.6 + valueNoise(vUv * 95.0) * 0.4;
     float specks = step(0.82, valueNoise(vUv * 140.0));
     float crusted = smoothstep(0.02, 0.7, crust);
+    #ifdef AGE
+    // M3: its age, read from how it lies. Just arrived (the lifecycle's rest:
+    // still settling, nothing may rise from it yet) it is fine and smooth,
+    // a little paler; once it has lain a while it is the granular deposit;
+    // long lain, it is coarser and sinks toward the ground's own tone.
+    float settling = 1.0 - smoothstep(0.04, 0.12, vAge);
+    float aged = smoothstep(0.3, 1.0, vAge);
+    crusted *= mix(1.0, 0.15, settling);
+    crusted = mix(crusted, min(1.0, crusted * 1.4 + 0.15 * presence), aged);
+    col = mix(col, uBright * 0.95, 0.35 * settling * presence);
+    #endif
     col = mix(col, uSediment * (0.55 + 0.7 * grain) + uBright * specks * 0.25, crusted);
     vec3 lit = col * (ambient * 0.9 + uLightColor * wrap * 0.75);
+    #ifdef AGE
+    lit *= mix(1.0, 0.8, aged);
+    #endif
 
     // The light held in what the colony gathered (accumulation.js): the
     // skin takes its tone, and the thicker and denser it is, the more light
@@ -1006,8 +1114,10 @@ const TISSUE_FRAGMENT = /* glsl */ `
   }
 `
 
-function createTissueMaterial(tint) {
+function createTissueMaterial(tint, { age = false } = {}) {
   return new THREE.ShaderMaterial({
+    // `age` (the Habitat's M3, the lifecycle's residue): drawn by how long it has lain.
+    defines: age ? { AGE: '' } : {},
     fog: true,
     transparent: true,
     depthWrite: false,

@@ -208,6 +208,12 @@ const FRAGMENT = /* glsl */ `
   uniform vec3 uGrain;
   varying float vLoad;
   #endif
+  #ifdef KIN
+  // M3E: a film from a resident, drawn as a piece of that resident's sheet:
+  // its film's tint and rim light (the bloom film's), not the air's opal.
+  uniform vec3 uKinTint;
+  uniform vec3 uKinRim;
+  #endif
 
   float h2(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -259,8 +265,12 @@ const FRAGMENT = /* glsl */ `
     float crisp = smoothstep(0.25, 0.55, ring(a + 2.0, s + 21.0, 5.0));
     float edgeX = 10.0; // the other edges: a tear, apertures, a fibre
     float rimX = 0.0;
-    // Often one cleaner edge where it tore away.
-    if (h1(s * 14.7) > 0.35) {
+    // Often one cleaner edge where it tore away (M3E's: always, it came away from a sheet).
+    bool torn = h1(s * 14.7) > 0.35;
+    #ifdef KIN
+    torn = true;
+    #endif
+    if (torn) {
       float at = h1(s * 12.3) * 6.28318;
       vec2 nT = vec2(cos(at), sin(at));
       float tear = 0.1 + 0.3 * h1(s * 13.1) + 0.02 * sin(6.0 * dot(p, vec2(-nT.y, nT.x)) + s) - dot(p, nT);
@@ -322,6 +332,12 @@ const FRAGMENT = /* glsl */ `
     float rim = max((1.0 - smoothstep(0.0, 0.07, edgeO)) * crisp, rimX) * body;
     // Clear in the middle, thicker toward the edges.
     float thick = 0.3 + 0.7 * (1.0 - smoothstep(0.0, 0.22, edge));
+    #ifdef KIN
+    // (A piece of sheet: even through, a little thicker where it tore, and
+    // no bright outline: clear middle and lit rim together drew a bubble.)
+    thick = 0.55 + 0.45 * (1.0 - smoothstep(0.0, 0.14, edgeX));
+    rim = max((1.0 - smoothstep(0.0, 0.07, edgeO)) * crisp * 0.3, rimX) * body;
+    #endif
     float crease = exp(-vCrease * vCrease / 0.004) * body;
 
     vec3 n = normalize(vNormalW);
@@ -335,6 +351,9 @@ const FRAGMENT = /* glsl */ `
     // The colour shifts with the angle and across the film, strongest toward
     // its edges and at grazing angles; the middle stays nearly clear.
     vec3 film = opal(1.6 * (1.0 - facing) + 0.6 * p.x + 0.5 * thick + h1(s * 1.7));
+    #ifdef KIN
+    film = mix(mix(uKinTint, uKinRim, 0.6 * fres), film, 0.12);
+    #endif
     float sheen = 0.45 + 0.55 * max(fres, rim);
     vec3 col = film * (0.22 + 0.5 * wrap + 0.9 * dot(ambient, vec3(0.3, 0.4, 0.3))) * sheen;
     float spec = pow(max(dot(n, normalize(uLightDir + view)), 0.0), 36.0);
@@ -404,7 +423,7 @@ const tmp = {
  * Exported so the lifecycle experiment (study 10) can show its shed films
  * in exactly this material; AirFragments uses it for its own slots.
  */
-export function createFilmMesh(n, { carrier = false, over = false } = {}) {
+export function createFilmMesh(n, { carrier = false, over = false, kin = false } = {}) {
   const geometry = makePatch()
   geometry.setAttribute('aSeed', new THREE.InstancedBufferAttribute(new Float32Array(n), 1))
   const fade = new THREE.InstancedBufferAttribute(new Float32Array(n), 1)
@@ -425,6 +444,12 @@ export function createFilmMesh(n, { carrier = false, over = false } = {}) {
     geometry.setAttribute('aLoad', load)
     defines.CARRIER = ''
     extra.uGrain = hexUniform('#EEE6F6')
+  }
+  if (kin) {
+    // M3E (LifecycleLayer `kinFilms`): the resident's own film colours (ScatterLayers' bloom film).
+    defines.KIN = ''
+    extra.uKinTint = hexUniform('#CDD3F5')
+    extra.uKinRim = hexUniform('#A9B0E8')
   }
   const material = new THREE.ShaderMaterial({
     defines,

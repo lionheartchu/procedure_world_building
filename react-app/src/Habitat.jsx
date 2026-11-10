@@ -14,7 +14,7 @@ import { Lifecycle, LIFECYCLE } from './lib/lifecycle'
 import { strayResidue } from './lib/scatter'
 import { buildBlooms, FormWriter } from './lib/traceForms'
 import { buildFarField } from './lib/farField'
-import { Membrane } from './lib/encounter'
+import { Membrane, ResidentEncounter, tensionOf } from './lib/encounter'
 import { FEATURED, LOOKS, SPACES, withLook } from './lib/habitat'
 import { composeSpace } from './lib/habitatCompose'
 import { prerun } from './lib/habitatWorld'
@@ -45,17 +45,17 @@ const noop = () => {}
 const DPR = typeof window !== 'undefined' ? Number(new URLSearchParams(window.location.search).get('dpr')) || null : null
 
 /** Development diagnostics, like the lifecycle's own (`window.__habitat`). */
-function Diagnostics({ lifecycles, membrane, composed, ground, commons }) {
+function Diagnostics({ lifecycles, membrane, composed, ground, commons, encounter }) {
   const gl = useThree((s) => s.gl)
   const scene = useThree((s) => s.scene)
   const camera = useThree((s) => s.camera)
   const clock = useThree((s) => s.clock)
   useEffect(() => {
-    window.__habitat = { gl, scene, camera, clock, lifecycles, membrane, composed, ground, commons }
+    window.__habitat = { gl, scene, camera, clock, lifecycles, membrane, composed, ground, commons, encounter }
     return () => {
       delete window.__habitat
     }
-  }, [gl, scene, camera, clock, lifecycles, membrane, composed, ground, commons])
+  }, [gl, scene, camera, clock, lifecycles, membrane, composed, ground, commons, encounter])
   return null
 }
 
@@ -83,6 +83,22 @@ function Formation({ geometry, formOptions, accumulation, openness, world, look 
     setAccumulation(u, accumulation)
   })
   return <mesh geometry={geometry} material={material} frustumCulled={false} />
+}
+
+/**
+ * M3E: the resident encounter, once a frame: which resident is met (from
+ * where the visitor is), how taut it is now (its matter and stage), and its
+ * spring. It reads the lifecycle; nothing here writes to it.
+ */
+function ResidentEncounterDriver({ encounter, lifecycles }) {
+  const camera = useThree((s) => s.camera)
+  useFrame((_, delta) => {
+    encounter.choose(camera.position.toArray(), lifecycles)
+    const r = encounter.resident
+    encounter.respond(r ? tensionOf(r, LIFECYCLE.bodyPerHeight, LIFECYCLE.lies) : 0)
+    encounter.update(Math.min(delta, 0.1))
+  })
+  return null
 }
 
 /** The visitor's place on the water, for the water's cue (Terrain `cue`): set each frame from the camera. */
@@ -189,6 +205,8 @@ export default function Habitat() {
         ...(H.look?.far?.sink !== undefined ? { sink: H.look.far.sink, flatten: H.look.far.flatten } : {}),
         ...(H.farTerrain ? { fine: 3.5, field } : {}),
         ...(H.horizon ? { horizon: H.horizon, sink: H.horizon.sink, flatten: H.horizon.flatten } : {}),
+        // M3: the slab's seam with the far ground sealed.
+        ...(H.seal ? { seal: H.seal } : {}),
       }),
     [baseField, world, H, field],
   )
@@ -238,7 +256,9 @@ export default function Habitat() {
     const positions = [veilGeometry.film, veilGeometry.solid].filter((g) => g?.attributes?.position).map((g) => g.attributes.position.array)
     return new Membrane({ positions, foot: veil.p[1], height: veil.height })
   }, [veil, veilGeometry])
-  const contacts = useMemo(() => (membrane ? [membrane] : []), [membrane])
+  // M3E: the resident encounter, met as the veil is (a contact that yields).
+  const residentEncounter = useMemo(() => (H.encounter ? new ResidentEncounter({ world }) : null), [H, world])
+  const contacts = useMemo(() => [membrane, residentEncounter].filter(Boolean), [membrane, residentEncounter])
   const drawnApart = useMemo(() => (veil ? [veil] : []), [veil])
   const metApart = useMemo(() => [...drawnApart, ...lifecycles.flatMap((l) => l.first)], [drawnApart, lifecycles])
 
@@ -250,7 +270,7 @@ export default function Habitat() {
       colonies: scatter.colonies,
       blooms: scatter.layers.bloom.instances,
       // M2: the cue drawn in the wisps, whose colony air follows the visitor.
-      ...(H.cueAir === 'wisps' && commons ? { cue: commons, wispFollow: true } : {}),
+      ...(H.cueAir === 'wisps' && commons ? { cue: commons, wispFollow: true, cueGlobal: !!H.cueGlobal } : {}),
     }),
     [H, scatter, commons],
   )
@@ -305,6 +325,10 @@ export default function Habitat() {
           carriers
           cullLives={size > FIELD_SIZE}
           legible={!!H.legible}
+          ageLook={!!H.residueAge}
+          closeRange={!!H.closeRange}
+          encounter={residentEncounter}
+          kinFilms={!!H.kinFilms}
         />
         {composed.vessels?.film && (
           <Formation geometry={composed.vessels.film} formOptions={formOptions} accumulation={accumulation} openness={H.scatter.bloomOpenness} world={world} />
@@ -325,8 +349,9 @@ export default function Habitat() {
           />
         )}
         {commons && H.cueAir !== 'wisps' && <MorphAir commons={commons} />}
-        <PresenceCamera world={world} scatter={scatter} lifecycle={null} air={presenceAir} inside arrival={arrival} withhold={metApart} contacts={contacts} forms={forms} smooth={(MOTION ?? H.motion) === 'smooth'} bound={H.bound} nearAir={size > FIELD_SIZE} />
-        <Diagnostics lifecycles={lifecycles} membrane={membrane} composed={composed} ground={ground} commons={commons} />
+        {residentEncounter && <ResidentEncounterDriver encounter={residentEncounter} lifecycles={lifecycles} />}
+        <PresenceCamera world={world} scatter={scatter} lifecycle={null} air={presenceAir} inside arrival={arrival} withhold={metApart} contacts={contacts} forms={forms} smooth={(MOTION ?? H.motion) === 'smooth'} bound={H.bound} nearAir={size > FIELD_SIZE} unstick={!!H.unstick} />
+        <Diagnostics lifecycles={lifecycles} membrane={membrane} composed={composed} ground={ground} commons={commons} encounter={residentEncounter} />
       </Scene>
 
       <HabitatCorner title={title} pale={paleSky} />

@@ -92,6 +92,13 @@ export default function ScatterLayers({
   // The Habitat's D1: the lifecycles' passage drawn to be read from eye
   // height (LifecycleLayer `legible`).
   legible = false,
+  // The Habitat's M3: the residue and old contours drawn by their age.
+  ageLook = false,
+  // The Habitat's M3R: the lifecycle residents drawn for close range (LifecycleLayer `closeRange`).
+  closeRange = false,
+  // The Habitat's M3E: the resident encounter (lib/encounter.js), and films drawn as their residents' sheet.
+  encounter = null,
+  kinFilms = false,
 }) {
   const materials = useMemo(() => MESHES.map((m) => createFormMaterial({ ...m, ...formOptions })), [formOptions])
   const residentMeshes = useMemo(() => (formOptions ? RESIDENT_MESHES.map((m) => ({ ...m, ...formOptions })) : RESIDENT_MESHES), [formOptions])
@@ -215,6 +222,10 @@ export default function ScatterLayers({
           cull={cullLives}
           legible={legible}
           light={formOptions?.light ?? null}
+          age={ageLook}
+          closeRange={closeRange}
+          encounter={encounter}
+          kinFilms={kinFilms}
         />
       ))}
       {MESHES.map((m, k) => {

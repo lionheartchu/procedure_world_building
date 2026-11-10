@@ -384,6 +384,43 @@ cue in the wisps rather than as puffs. It uses:
 
 Without `cue`, the wisps are as before.
 
+M3 (`/habitat/m3`, [study 21](21-habitat-m3.md)) is M2 with `seal` on
+buildFarField (a skirt from the far ground's inner edge), `LOOKS.open2`
+(the water's `swell` and the bed's depth in `wet`), `cueGlobal` (AmbientAir
+and AirWisps: the cue drawn by strength, not nearness; `uCueFilaments`), and
+`residueAge` (ScatterLayers `ageLook`, LifecycleLayer `age`: the residue's
+`aAge` and an `AGE` define in the tissue material, old contours settling).
+All are off elsewhere.
+
+M3R (`/habitat/m3r`, study 21's last section) is M3 with `LOOKS.open3`:
+- **Terrain:** `exactDepth` (the water reads a half-float copy of the
+  mesh's own heights, `uGround`), `clear` (opacity by the eye's path
+  through the water, with a near-eye ripple; on the far water too),
+  `wetJoin` and `nearGrain`.
+- **The form material:** `nearAlpha` (films thin near the eye).
+- **The lifecycle:** `closeRange` on ScatterLayers and LifecycleLayer. A
+  resident's material compiles `POSTURE` (a length-keeping bend from the
+  foot, set from `postureOf`, in place of `uRecline`'s shear); the sheet
+  stays closed, the bead shrinks with the last films, and the ended
+  presence eases.
+
+Each is compiled or set only when asked for.
+
+M3E (`/habitat/m3e`, [study 22](22-habitat-m3e.md)) is M3R with:
+- **`encounter`:** `ResidentEncounter` (`lib/encounter.js`), a `Membrane`
+  whose surface is the nearest standing resident as drawn now
+  (LifecycleLayer `poseFilm`). Its response is set by `tensionOf` (the
+  resident's body against a full one, by stage). It is a contact of the
+  presence; the resident's materials compile `ENCOUNTER`.
+- **`kinFilms`:** `createFilmMesh`'s `KIN`, with films sized by their
+  matter.
+- **`unstick`:** the presence's cushion as a rate (`SMOOTH.cushionRate`).
+- **`live`:** the form material's live-site colour (`uMint`).
+
+`Membrane`'s constants are now per instance (`E`); the placed veil keeps
+`ENCOUNTER`. The `ENCOUNTER` vertex block measures the dent on the sheet as
+it stands, which for the veil is its rest shape, as before.
+
 The earlier studies added four more:
 - `shapingOp` on `createField`;
 - `cue` on Terrain (`waterCue` on Scene);

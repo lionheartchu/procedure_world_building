@@ -207,6 +207,8 @@ deployed.
 | 18 | [Habitat D1](docs/18-habitat-d1.md) | Visual hierarchy, one legible lifecycle passage, why the ecology goes dormant (`/habitat/d1`) | For review |
 | 19 | [A shared cue in the air (M1)](docs/19-collective-morphogenesis.md) | A release breathes a signal (not matter) downwind; residents answer by state (`/habitat/m1`) | Exploration |
 | 20 | [The cue in the moving air (M2)](docs/20-cue-flow.md) | M1's cue drawn in the existing air wisps; the rest rule diagnosed (`/habitat/m2`) | Exploration |
+| 21 | [Habitat M3](docs/21-habitat-m3.md) | The seam's white line sealed, calmer water, the cue drawn independently of the visitor, residue read by its age (`/habitat/m3`); M3R, the same at close range: exact shorelines, clear shallows, a resident that bends, sags and lies down (`/habitat/m3r`) | First playable, local; M3R for review |
+| 22 | [Habitat M3E](docs/22-habitat-m3e.md) | One encounter: the resident the visitor comes near yields as its own tension (matter and stage) has it, read-only to the lifecycle; films drawn as their residents' sheet; no stall near forms; the live-site light in the membranes' own tone (`/habitat/m3e`) | Prototype, local |
 
 Screenshots for studies 01, 02 and 04 were never captured; each document
 says what to grab.

@@ -333,6 +333,8 @@ export default function AmbientAir({
   // and (following) the wisps' colony air at the visitor's nearest colonies.
   cue = null,
   wispFollow = false,
+  // M3: the cue drawn the same wherever the visitor stands (AirWisps `cueGlobal`).
+  cueGlobal = false,
 }) {
   const gl = useThree((s) => s.gl)
   const size = useThree((s) => s.size)
@@ -514,6 +516,7 @@ export default function AmbientAir({
         debug={DEBUG}
         cue={cue}
         colonyRef={wispFollow && follow ? nearColonies : null}
+        cueGlobal={cueGlobal}
       />
       {fragments && <AirFragments floor={floor} time={time} drift={drift} curl={curl} colonyData={colonyData} colony={colony} />}
     </group>

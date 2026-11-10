@@ -129,6 +129,15 @@ const DEPOSIT_LOOK = { blur: 2, tint: '#EEE6F6', full: 0.008 }
 const DEPOSIT_LEGIBLE = { blur: 1, full: 0.004 }
 
 /**
+ * M3 (`age`): the residue drawn by how long its matter has lain, from the
+ * lifecycle's own record of when matter last arrived in each cell (the clock
+ * its rest rule reads): `full` s reads as long lain, and it is re-read every
+ * `every` s of simulation time. And an old contour settles toward the ground
+ * as it ages (`contour`: s over which, and how much).
+ */
+const AGE = { full: 240, every: 0.5, contour: [60, 360, 0.3] }
+
+/**
  * The warm accent, a development A/B. Only where matter is crossing from one
  * state to another, for as long as the simulation records it doing so, the
  * surface shifts toward a pale champagne at its own brightness, then returns:
@@ -196,6 +205,102 @@ const STAIN = { full: 0.012, most: 0.5, color: [0.74, 0.8, 1.0] }
 
 /** Matter taken lately from one cell that shows fully (approach A); about the most a cell gives. */
 const UPTAKE_FULL = 0.005
+
+/**
+ * The Habitat's M3R (`closeRange`): a resident's posture through its life, as
+ * the form material's bend from its foot ([bend at the foot (rad), how far up
+ * it builds (share of its height), the crest's own fold (rad)]). Read from
+ * the simulation's own clock for it (stage, stageTime, recline); nothing in
+ * the simulation reads it back.
+ *
+ *   - forming   it rises from lying low over its lean, its crest curled,
+ *               lifting and opening as it unfolds (`young` at its start)
+ *   - holding   it stands as built
+ *   - receding  it loses tension: the crest folds over first, then the whole
+ *               sheet sags from a soft bend along its height (`droop`)
+ *   - releasing the bend moves down to its foot until it lies flat on the
+ *               ground ahead of it (`lie`), its crest relaxing as it goes
+ *   - ended     it lies so, an outline on the ground
+ *
+ * Each stage ends where the next begins, so there is no jump between them.
+ * Its bead (a crest's drop of matter) goes with the last of its films.
+ */
+const POSTURE = { young: [0.75, 0.45, 0.7], droop: [0.55, 0.75, 0.6], lie: [1.53, 0.12, 0] }
+
+/**
+ * M3E: a resident's film where the form vertex shader draws it now, before
+ * its air (its growth and POSTURE, in JS: the same formulas), for the
+ * encounter to meet. Returns the sheet's height above its foot.
+ */
+function poseFilm(geo, growth, bent, r, tilt, out) {
+  const pos = geo.attributes.position.array
+  const anc = geo.attributes.aAnchor.array
+  const bir = geo.attributes.aBirth.array
+  const [bx, by, bz] = r.desc.p
+  const lx = Math.cos(r.desc.lean)
+  const lz = Math.sin(r.desc.lean)
+  const H = Math.max(r.desc.height * 1.4 * Math.max(r.unfold, 0.05), 0.05)
+  const bending = bent && (bent[0] !== 0 || bent[2] !== 0)
+  const angle = (u) => bent[0] * (1 - Math.exp(-u / Math.max(bent[1] * H, 1e-3))) + bent[2] * smoothstep(0.25 * H, H, u)
+  let top = 0
+  for (let i = 0, n = pos.length / 3; i < n; i++) {
+    const g = smoothstep(bir[2 * i], bir[2 * i] + Math.max(bir[2 * i + 1], 1e-3), growth)
+    let x = anc[3 * i] + (pos[3 * i] - anc[3 * i]) * g
+    let y = anc[3 * i + 1] + (pos[3 * i + 1] - anc[3 * i + 1]) * g
+    let z = anc[3 * i + 2] + (pos[3 * i + 2] - anc[3 * i + 2]) * g
+    if (bending) {
+      const qx = x - bx
+      const qy = y - by
+      const qz = z - bz
+      const a = qx * lx + qz * lz
+      const c = -qx * lz + qz * lx
+      const h = Math.max(qy, 0)
+      let X = 0
+      let Y = 0
+      const du = h / 10
+      for (let k = 0; k < 10; k++) {
+        const th = angle((k + 0.5) * du)
+        X += Math.sin(th) * du
+        Y += Math.cos(th) * du
+      }
+      const th = angle(h)
+      const A = X + a * Math.cos(th)
+      const rx = lx * A - lz * c
+      const rz = lz * A + lx * c
+      let ry = Y - a * Math.sin(th) + Math.min(qy, 0)
+      const groundRest = tilt[2] + qx * tilt[0] + qz * tilt[1]
+      const groundNow = tilt[2] + rx * tilt[0] + rz * tilt[1]
+      ry = Math.max(ry, groundNow + Math.min(0.03, qy - groundRest))
+      x = bx + rx
+      y = by + ry
+      z = bz + rz
+    }
+    out[3 * i] = x
+    out[3 * i + 1] = y
+    out[3 * i + 2] = z
+    top = Math.max(top, y - by)
+  }
+  return top
+}
+
+function postureOf(r) {
+  const L = LIFECYCLE
+  const { young, droop, lie } = POSTURE
+  if (r.stage === 'forming') {
+    const lift = smoothstep(0, L.form, r.stageTime)
+    return [young[0] * (1 - lift) ** 2, young[1], young[2] * (1 - smoothstep(0.25, 1, lift))]
+  }
+  if (r.stage === 'receding') {
+    const k = r.recline / L.lies
+    return [droop[0] * smoothstep(0.15, 1, k), droop[1], droop[2] * smoothstep(0, 0.7, k)]
+  }
+  if (r.stage === 'releasing') {
+    const k = smoothstep(0, 1, (r.recline - L.lies) / (0.95 - L.lies))
+    return [droop[0] + (lie[0] - droop[0]) * k, droop[1] + (lie[1] - droop[1]) * k, droop[2] * (1 - smoothstep(0.2, 0.9, k))]
+  }
+  if (r.stage === 'ended') return lie
+  return [0, droop[1], 0]
+}
 
 /** 1 when a transition happened `since` seconds ago, 0 once `fade` has passed. */
 const recency = (since, fade) => 1 - smoothstep(0, fade, since)
@@ -334,15 +439,33 @@ const tmp = {
 }
 
 /** One resident: its membrane, its own two materials, its own stage. */
-function Resident({ resident: r, lifecycle, world, meshes, growth, waterLine, openness, accumulation, visible, legible = false }) {
+function Resident({ resident: r, lifecycle, world, meshes, growth, waterLine, openness, accumulation, visible, legible = false, age = false, closeRange = false, encounter = null }) {
+  // M3R (`closeRange`): its posture (POSTURE), and a closed sheet.
+  const posture = closeRange
   const shared = !!lifecycle.commons
   const materials = useMemo(
-    () => meshes.map((m) => warmUniforms(createFormMaterial({ ...m, ...(legible ? { wind: true, release: true } : null), ...(shared ? { stain: true } : null) }))),
-    [meshes, legible, shared],
+    () =>
+      meshes.map((m) =>
+        warmUniforms(
+          createFormMaterial({ ...m, ...(legible ? { wind: true, release: true } : null), ...(shared ? { stain: true } : null), ...(posture ? { posture: true } : null), ...(encounter ? { encounter: true } : null) }),
+        ),
+      ),
+    [meshes, legible, shared, posture, encounter],
   )
+  // M3R: the ground under it, as a plane (its slope along x and z, and its
+  // height at the foot against the foot's own), for it to lie on.
+  const tilt = useMemo(() => {
+    if (!posture) return null
+    const [x, y, z] = r.desc.p
+    const g = (gx, gz) => world.groundY(...world.toUV(gx, gz))
+    const e = 0.35
+    return [(g(x + e, z) - g(x - e, z)) / (2 * e), (g(x, z + e) - g(x, z - e)) / (2 * e), g(x, z) - y]
+  }, [posture, r, world])
   // D1: where its films came away (as it stood), and the air bending it now.
   const marks = useRef({ list: [] })
   const bend = useRef(new THREE.Vector3())
+  // M3E: its film as drawn now, for the encounter (only while it is the one met).
+  const posed = useRef({ array: null, tick: 0 })
   const edgeGlows = useMemo(() => materials.map((m) => m.uniforms.uEdgeGlow?.value ?? 0), [materials])
   const geo = useMemo(() => buildBlooms([r.desc], world, new FormWriter()), [r, world])
   useEffect(
@@ -396,22 +519,39 @@ function Resident({ resident: r, lifecycle, world, meshes, growth, waterLine, op
     // full, thinner as its films leave, and as an old contour, as much as
     // it still holds.
     const full = LIFECYCLE.bodyPerHeight * r.desc.height
+    // (M3, `age`: an old contour settles toward the ground as it ages.)
+    const settled = age && ended ? 1 - AGE.contour[2] * smoothstep(AGE.contour[0], AGE.contour[1], r.stageTime) : 1
+    // (M3R, `closeRange`: as it ends, from the one to the other over a few
+    // seconds, not at once: the body becomes the contour, it does not dim.)
+    const asEnded = (0.2 + 0.75 * (r.contour / full)) * settled
     const presence = legible
       ? ended
-        ? 0.2 + 0.75 * (r.contour / full)
+        ? closeRange
+          ? asEnded + (0.3 + 0.85 * Math.min(1.1, r.contour / full) - asEnded) * (1 - smoothstep(0, 6, r.stageTime))
+          : asEnded
         : 0.3 + 0.85 * Math.min(1.1, r.body / full)
       : ended
         ? 0.22 + 0.4 * (r.contour0 > 0 ? r.contour / r.contour0 : 0)
         : r.stage === 'releasing'
           ? 1 - 0.3 * smoothstep(0, LIFECYCLE.release, r.stageTime)
           : 1
-    materials.forEach((material) => {
+    const bent = posture ? postureOf(r) : null
+    // M3R: its bead goes with the last of its films (it shrinks into the
+    // crest it hangs from), rather than vanishing once it has lain down.
+    const bead = posture && r.stage === 'releasing' ? 1 - smoothstep(0.55, 1, r.stageTime / LIFECYCLE.release) : 1
+    materials.forEach((material, k) => {
       const u = material.uniforms
-      u.uGrowth.value = r.unfold * growth.current
+      u.uGrowth.value = r.unfold * growth.current * (k === 0 ? bead : 1)
+      if (bent && u.uPosture) {
+        u.uPosture.value.set(bent[0], bent[1], bent[2], r.desc.height * 1.4 * Math.max(r.unfold, 0.05))
+        u.uTilt.value.set(...tilt)
+      }
       u.uTime.value = t
       u.uWaterY.value = waterLine.current
       u.uGlow.value = 0.6
-      u.uOpenness.value = openness * 1.6
+      // M3R: a living sheet stays closed (its thin spots light, never a few
+      // holes, which read as eyes); it opens only where its films left.
+      u.uOpenness.value = closeRange ? Math.min(openness * 1.6, 0.34 / Math.max(r.desc.openness ?? 1, 1e-3)) : openness * 1.6
       u.uRecline.value = r.recline
       u.uBase.value.set(r.desc.p[0], r.desc.p[1], r.desc.p[2])
       u.uLean.value.set(Math.cos(r.desc.lean), Math.sin(r.desc.lean))
@@ -467,6 +607,31 @@ function Resident({ resident: r, lifecycle, world, meshes, growth, waterLine, op
         u.uWarmGlow.value = W.glow
       }
     }
+    // M3E: the one met gives the encounter its surface as drawn (a few
+    // times a second, and at once when first met) and its air; it shows the
+    // dent. Every other resident shows none.
+    if (encounter) {
+      const mine = encounter.resident === r && geo.film
+      if (mine) {
+        const P = posed.current
+        if (!P.array) P.array = new Float32Array(geo.film.attributes.position.count * 3)
+        if (!encounter.ready || ++P.tick % 4 === 0) {
+          const top = poseFilm(geo.film, r.unfold * growth.current, bent, r, tilt ?? [0, 0, 0], P.array)
+          encounter.surface(r, P.array, r.desc.p[1], top)
+        }
+        encounter.wind = [bend.current.x, 0, bend.current.z, r.desc.height]
+      }
+      const D = mine ? encounter.displacement : null
+      for (const material of materials) {
+        const u = material.uniforms
+        if (!u.uDent) continue
+        if (D) {
+          u.uDent.value.set(D[0], D[1], D[2])
+          u.uDentAt.value.set(encounter.at[0], encounter.at[1], encounter.at[2], encounter.radius)
+          u.uDentFoot.value.set(encounter.foot, encounter.footSpan, encounter.height, encounter.E.bend)
+        } else u.uDent.value.set(0, 0, 0)
+      }
+    }
     if (solid.current) solid.current.visible = visible && !ended
   })
 
@@ -482,10 +647,12 @@ function Resident({ resident: r, lifecycle, world, meshes, growth, waterLine, op
  * The residue: a film lying on the ground over the patch, reading the live
  * residual. Rebuilt only when the residual changes.
  */
-function Deposit({ lifecycle, world, waterLine, accumulation, visible, cull = false, light = null, legible = false }) {
+function Deposit({ lifecycle, world, waterLine, accumulation, visible, cull = false, light = null, legible = false, age = false }) {
   const LOOK = legible ? { ...DEPOSIT_LOOK, ...DEPOSIT_LEGIBLE } : DEPOSIT_LOOK
   // D1 (`light`): the residue lit as the ground it lies on is (its own entry, else the colony skin's).
-  const material = useMemo(() => warmUniforms(createFormMaterial({ kind: 'tissue', tint: DEPOSIT_LOOK.tint, light: light && { tissue: light.deposit ?? light.tissue } })), [light])
+  const material = useMemo(() => warmUniforms(createFormMaterial({ kind: 'tissue', tint: DEPOSIT_LOOK.tint, light: light && { tissue: light.deposit ?? light.tissue }, age })), [light, age])
+  // M3: the age field, and when it was last read.
+  const ageField = useMemo(() => (age ? { cells: new Float32Array(lifecycle.residual.length), shown: new Float32Array(lifecycle.residual.length), at: -1e9 } : null), [age, lifecycle])
   const shown = useMemo(() => new Float32Array(lifecycle.residual.length), [lifecycle])
   // The warm accent's grids: how recently matter arrived in each cell, and
   // was taken up from it (1 now, 0 faded), as drawn (blurred like the residue).
@@ -533,6 +700,10 @@ function Deposit({ lifecycle, world, waterLine, accumulation, visible, cull = fa
     const warm = new THREE.Float32BufferAttribute(new Float32Array(count * 2), 2)
     warm.setUsage(THREE.DynamicDrawUsage)
     geometry.setAttribute('aWarm', warm)
+    // Read only with M3's age (AGE).
+    const ageAttr = new THREE.Float32BufferAttribute(new Float32Array(count).fill(1), 1)
+    ageAttr.setUsage(THREE.DynamicDrawUsage)
+    geometry.setAttribute('aAge', ageAttr)
     geometry.setIndex(index)
     geometry.computeBoundingSphere()
     return { geometry, uvs }
@@ -597,6 +768,21 @@ function Deposit({ lifecycle, world, waterLine, accumulation, visible, cull = fa
     u.uWaterY.value = waterLine.current
     setAccumulation(u, accumulation)
 
+    // M3: how long the matter in each cell has lain, re-read now and then.
+    if (ageField && (!cull || !empty) && lifecycle.t - ageField.at >= AGE.every) {
+      ageField.at = lifecycle.t
+      const res = lifecycle.res
+      const [i0, i1, j0, j1] = win ?? [0, res - 1, 0, res - 1]
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const c = j * res + i
+        ageField.cells[c] = Math.min(1, Math.max(0, (lifecycle.t - lifecycle.arrived[c]) / AGE.full))
+      }
+      blurShown(ageField.cells, ageField.shown, 1)
+      const attr = geometry.attributes.aAge
+      for (let k = 0; k < uvs.length; k++) attr.setX(k, sample(ageField.shown, res, uvs[k][0], uvs[k][1]))
+      attr.needsUpdate = true
+    }
+
     const W = WARM.variants[lifecycle.warm]
     const on = !!W && !!(W.edge || W.fresh || W.drawn || W.absorb)
     setWarm(material, on)
@@ -651,7 +837,7 @@ function Deposit({ lifecycle, world, waterLine, accumulation, visible, cull = fa
  * `carriers` (the Habitat): the films show the matter they carry as grains
  * (AirFragments' CARRIER), so they read apart from the air's own particles.
  */
-export default function LifecycleLayer({ lifecycle, world, meshes, growth, waterLine, openness, accumulation, visible, frame = true, carriers = false, cull = false, legible = false, light = null }) {
+export default function LifecycleLayer({ lifecycle, world, meshes, growth, waterLine, openness, accumulation, visible, frame = true, carriers = false, cull = false, legible = false, light = null, age = false, closeRange = false, encounter = null, kinFilms = false }) {
   const camera = useThree((s) => s.camera)
   const controls = useThree((s) => s.controls)
   const wake = useMemo(() => (carriers ? { points: createWake(), next: new Map(), slot: new Map(), cursor: 0 } : null), [carriers])
@@ -664,14 +850,14 @@ export default function LifecycleLayer({ lifecycle, world, meshes, growth, water
   )
   const size = useThree((s) => s.size)
   const films = useMemo(() => {
-    const mesh = createFilmMesh(FILMS, { carrier: carriers, over: legible })
+    const mesh = createFilmMesh(FILMS, { carrier: carriers, over: legible, kin: kinFilms })
     mesh.name = 'lifecycle-films'
     warmUniforms(mesh.material)
     const warm = new THREE.InstancedBufferAttribute(new Float32Array(FILMS), 1)
     warm.setUsage(THREE.DynamicDrawUsage)
     mesh.geometry.setAttribute('aWarm', warm)
     return mesh
-  }, [carriers, legible])
+  }, [carriers, legible, kinFilms])
   useEffect(
     () => () => {
       films.geometry.dispose()
@@ -748,7 +934,10 @@ export default function LifecycleLayer({ lifecycle, world, meshes, growth, water
       tmp.z.multiplyScalar(Math.cos(roll)).addScaledVector(tmp.y, Math.sin(roll))
       tmp.y.crossVectors(tmp.z, tmp.x)
       tmp.q.setFromRotationMatrix(tmp.m.makeBasis(tmp.x, tmp.y, tmp.z))
-      const length = f.size * (0.6 + 0.4 * smoothstep(0, 3, f.age))
+      // (M3E, `kinFilms`: as large as the matter it carries, about a quarter of
+      // its resident's sheet for its quarter of the shed matter; the
+      // simulation's own `size` drew each as large as the resident.)
+      const length = (kinFilms ? 0.11 + 0.07 * Math.sqrt(Math.min(1, f.matter / FULL_LOAD)) : f.size) * (0.6 + 0.4 * smoothstep(0, 3, f.age))
       tmp.p.set(f.p[0], f.p[1] + (f.state === 'settled' ? DEPOSIT_LIFT : 0), f.p[2])
       const dist = tmp.p.distanceTo(camera.position)
       const [near0, near1] = carriers ? NEAR.carriers : NEAR.overview
@@ -809,7 +998,7 @@ export default function LifecycleLayer({ lifecycle, world, meshes, growth, water
   const residents = lifecycle.residents.slice(0, count)
   return (
     <group>
-      <Deposit lifecycle={lifecycle} world={world} waterLine={waterLine} accumulation={accumulation} visible={visible} cull={cull} light={light} legible={legible} />
+      <Deposit lifecycle={lifecycle} world={world} waterLine={waterLine} accumulation={accumulation} visible={visible} cull={cull} light={light} legible={legible} age={age} />
       {lifecycle.conduit && <ConduitLayer lifecycle={lifecycle} world={world} visible={visible} />}
       {lifecycle.greybox && <ConduitGreybox lifecycle={lifecycle} world={world} visible={visible} />}
       {lifecycle.foldStudy && !lifecycle.greybox && (
@@ -836,6 +1025,9 @@ export default function LifecycleLayer({ lifecycle, world, meshes, growth, water
           accumulation={accumulation}
           visible={visible}
           legible={legible}
+          age={age}
+          closeRange={closeRange}
+          encounter={encounter}
         />
       ))}
       <primitive object={films} renderOrder={6} />

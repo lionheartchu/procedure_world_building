@@ -364,6 +364,27 @@ SPACES.m2 = {
 export const FEATURED = 'm2'
 
 /**
+ * M3 (docs/21-habitat-m3.md): M2 with three changes, none to the ecology:
+ *   - the thin white line where the slab meets the far ground sealed (a
+ *     skirt hung from the far ground's inner edge: `seal`, buildFarField)
+ *   - calmer water (`open2`): D1's swell and bed darkening made broad
+ *     blotches and far bands; both eased, the depth kept
+ *   - the cue drawn the same wherever the visitor stands (`cueGlobal`: the
+ *     most active, not the nearest), and the residue and old contours drawn
+ *     by how long they have lain (`residueAge`), so the ecology's recent
+ *     past reads at any moment
+ */
+SPACES.m3 = {
+  ...SPACES.m2,
+  key: 'm3',
+  title: 'M3 · coherent ground, readable time (exploration)',
+  lookKey: 'open2',
+  seal: 0.6,
+  cueGlobal: true,
+  residueAge: true,
+}
+
+/**
  * D1's look: open, given depth. The same sky, a step less white at the
  * horizon, its glow no longer clipping on the light's side; a thicker haze a
  * shade deeper than the horizon, so distance lightens into layered
@@ -415,6 +436,90 @@ LOOKS.open1 = {
     fog: 0.019,
     sky: { horizon: '#D3CBE8', mid: '#B0A8D8', zenith: '#827CBB', glow: '#EDE6F3', glowDir: [-0.6, 0, -0.55], glowGain: 0.45, encode: true },
   },
+}
+
+/**
+ * M3's look: D1's, with the water calmer. D1's swell (2.2) laid the sky's
+ * gradient over the shallows in broad light and dark blotches, and its bed
+ * darkened over 0.08 units of depth, so every ripple of the shallow bed
+ * showed as a band. The swell is D's again (0.9) and the bed deepens over
+ * 0.2 units: the water stays deeper than the ground beside it.
+ */
+LOOKS.open2 = {
+  ...LOOKS.open1,
+  ground: {
+    ...LOOKS.open1.ground,
+    swell: 0.9,
+    wet: [0.15, 0.3, 0.3, 0.2],
+  },
+}
+
+/**
+ * M3R (docs/21-habitat-m3.md, "M3R"): M3 at close range. Its world,
+ * simulation, palette and light exactly; what changes is how they read from
+ * a visitor's eye height:
+ *   - the shoreline: the water's depth from the ground exactly as the
+ *     terrain draws it (`exactDepth`; the simulation's 8-bit, coarser copy
+ *     cut its edge into steps), and the damp ground running on under the
+ *     water (`wetJoin`; D1's damp band stopped at the line, a hard edge)
+ *   - the water: as opaque as the eye's path through it (`clear`: shallows
+ *     seen from above clear to their bed, water at a slant dense), with a
+ *     fine ripple near the eye; the ground a fine grain there (`nearGrain`)
+ *   - a sheet near the eye thinning (`nearAlpha`), so passing one does not
+ *     fill the view with a pale wall
+ *   - the lifecycle residents drawn for close range (`closeRange`,
+ *     LifecycleLayer): their posture rising and opening, sagging, lying
+ *     down onto the ground under them, as one bend that keeps the sheet's
+ *     length; their sheet closed but where their films left
+ */
+LOOKS.open3 = {
+  ...LOOKS.open2,
+  form: { ...LOOKS.open2.form, nearAlpha: [0.35, 1.3, 0.3] },
+  ground: {
+    ...LOOKS.open2.ground,
+    exactDepth: true,
+    wetJoin: 1,
+    clear: [0.22, 0.35, 1.2, 5],
+    nearGrain: [0.3, 1.5, 5],
+  },
+}
+
+SPACES.m3r = {
+  ...SPACES.m3,
+  key: 'm3r',
+  title: 'M3R · close range (refinement of M3)',
+  lookKey: 'open3',
+  closeRange: true,
+}
+
+/**
+ * M3E (docs/22-habitat-m3e.md): M3R with one encounter, a prototype. Its
+ * world, simulation and look are M3R's, with:
+ *   - `encounter`: whichever standing resident the visitor comes near yields
+ *     to them, as its own tension (its matter, its stage) has it
+ *     (ResidentEncounter, lib/encounter.js); nothing it does reaches the
+ *     lifecycle
+ *   - `kinFilms`: the films a resident releases drawn as pieces of its own
+ *     sheet, as large as the matter they carry (the air's opal skins read as
+ *     soap bubbles)
+ *   - `unstick`: walking along or under a form no longer braked by the body's
+ *     height spring pressing into it (lib/presence.js)
+ *   - `live` (look): a live site's light in the membranes' own pale tone, not
+ *     mint, which on these pale skies read as the cue's ice blue
+ */
+LOOKS.open3e = {
+  ...LOOKS.open3,
+  form: { ...LOOKS.open3.form, live: '#DCD5F2' },
+}
+
+SPACES.m3e = {
+  ...SPACES.m3r,
+  key: 'm3e',
+  title: 'M3E · an encounter (prototype)',
+  lookKey: 'open3e',
+  encounter: true,
+  kinFilms: true,
+  unstick: true,
 }
 
 /** A space with a look applied (or as it is). */

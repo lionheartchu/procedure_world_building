@@ -92,7 +92,7 @@ function arrival(world, proxy, scatter, target, view) {
  * discarded after). Membranes drawn elsewhere (`withhold`: the Habitat's
  * residents and its encounter) are left out; `contacts` yield instead.
  */
-function buildBody(world, scatter, lifecycle, colonies, withhold = [], contacts = [], forms = [], smooth = false, bound = PRESENCE.bound, nearAir = false) {
+function buildBody(world, scatter, lifecycle, colonies, withhold = [], contacts = [], forms = [], smooth = false, bound = PRESENCE.bound, nearAir = false, unstick = false) {
   const residents = [...(lifecycle?.active ? lifecycle.first : []), ...withhold]
   const bloom = scatter.layers.bloom
   const placed = residents.length
@@ -105,7 +105,7 @@ function buildBody(world, scatter, lifecycle, colonies, withhold = [], contacts 
   }
   const proxy = formProxy([...positions, ...forms], { size: world.size })
   for (const layer of Object.values(geometry)) for (const part of Object.values(layer ?? {})) part?.dispose?.()
-  return new Presence({ world, proxy, colonies, blooms: bloom.instances, contacts, smooth, bound, nearAir })
+  return new Presence({ world, proxy, colonies, blooms: bloom.instances, contacts, smooth, bound, nearAir, unstick })
 }
 
 /** Nothing withheld, no contacts (stable defaults). */
@@ -118,7 +118,7 @@ const NONE = []
  * smooth motion, and a step aligned to the display's frames), and no `onLeave`: Escape then
  * does nothing, as there is no overview to return to.
  */
-export default function PresenceCamera({ world, scatter, lifecycle, air, inside, onLeave, arrival: fixed = null, withhold = NONE, contacts = NONE, forms = NONE, smooth = false, bound = PRESENCE.bound, nearAir = false }) {
+export default function PresenceCamera({ world, scatter, lifecycle, air, inside, onLeave, arrival: fixed = null, withhold = NONE, contacts = NONE, forms = NONE, smooth = false, bound = PRESENCE.bound, nearAir = false, unstick = false }) {
   const camera = useThree((s) => s.camera)
   const controls = useThree((s) => s.controls)
   const element = useThree((s) => s.events.connected)
@@ -139,10 +139,10 @@ export default function PresenceCamera({ world, scatter, lifecycle, air, inside,
 
   // The body belongs to one world: begun again when the world or its colonies change.
   const ensureBody = () => {
-    const key = [world, scatter, lifecycle?.active ? lifecycle : null, withhold, contacts, forms, smooth, bound, nearAir]
+    const key = [world, scatter, lifecycle?.active ? lifecycle : null, withhold, contacts, forms, smooth, bound, nearAir, unstick]
     const b = body.current
     if (b && b.key.every((k, i) => k === key[i])) return b
-    const next = buildBody(world, scatter, lifecycle, scatter.colonies, withhold, contacts, forms, smooth, bound, nearAir)
+    const next = buildBody(world, scatter, lifecycle, scatter.colonies, withhold, contacts, forms, smooth, bound, nearAir, unstick)
     next.key = key
     if (b) next.place(b.p, b.yaw, b.pitch)
     body.current = next

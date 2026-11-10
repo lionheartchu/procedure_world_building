@@ -218,6 +218,29 @@ The full context is in the
 - [ ] **The volume study's spanning structures** as undersides or cavities
   of the shared ground.
 
+### Future: Collective Morphogenesis
+
+Recorded, not built. The morphology diagrams in
+`docs/references/collective-morphogenesis/` show relationships and change
+over time. They are not geometry to reproduce.
+
+- **Perceptible relationships:** make what passes between residents,
+  colonies, carriers and the ground's records easier to see.
+- **Released matter changing growth:** how matter that accumulates changes
+  the conditions for what grows next.
+- **Mycelium-inspired principles, without fungal forms:** local
+  exploration, moving resources around, paths reinforced by repeated use,
+  branching, dormancy.
+- **Larger shared structures:** whether accumulated activity can produce
+  them, or an emergent core.
+- **Signal versus matter:** the coloured cue stays a signal, distinct from
+  physical matter.
+- **Varied colony morphology:** different local histories giving
+  different colony forms, with world-scale organisation possibly emerging
+  over time.
+- **An autonomous world:** visitor presence stays a limited, local
+  influence.
+
 ## Deferred or superseded
 
 - **Branching and tissue (study 08): kept as an exploratory close-range

@@ -72,9 +72,15 @@ function lines(half, inner, fine = 0, reach = FAR.reach, widest = Infinity) {
  * @param resolution the terrain's grid resolution
  * @param sink, flatten  how far the land sinks and flattens far out (FAR's by default)
  * @param fine       units past the edge kept at the terrain's own grid (0: none)
+ * @param seal       the Habitat's M3: a skirt this deep (units) hung from the
+ *                   far ground's inner edge, all round the slab. The slab's
+ *                   edge is lifted on the GPU by History's sediment (which
+ *                   piles against the boundary) and breathes with it; where it
+ *                   ends a little below the far ground's edge, the gap between
+ *                   them showed the sky as a thin white line. 0: none.
  * @returns {{ ground: { position, index }, water: { position, depth, index } }}
  */
-export function buildFarField({ baseField, world, elevation, resolution = 224, sink = FAR.sink, flatten = FAR.flatten, fine = 0, field = null, horizon = null }) {
+export function buildFarField({ baseField, world, elevation, resolution = 224, sink = FAR.sink, flatten = FAR.flatten, fine = 0, field = null, horizon = null, seal = 0 }) {
   const half = world.size / 2
   const Hz = horizon
   const reach = Hz ? Hz.reach : FAR.reach
@@ -151,7 +157,59 @@ export function buildFarField({ baseField, world, elevation, resolution = 224, s
       band.push(a, a + n, a + 1, a + 1, a + n, a + n + 1)
     }
   }
+  // M3: the skirt (`seal`), its own vertices after the grid's (and the ring's).
+  const skirt = (positions, tones, base) => {
+    if (!(seal > 0)) return { positions, tones, index: [] }
+    const at = (v) => xs.findIndex((x) => Math.abs(x - v) < 1e-6)
+    const lo = at(-half)
+    const hi = at(half)
+    const edges = [
+      Array.from({ length: hi - lo + 1 }, (_, k) => [lo + k, lo]),
+      Array.from({ length: hi - lo + 1 }, (_, k) => [hi, lo + k]),
+      Array.from({ length: hi - lo + 1 }, (_, k) => [hi - k, hi]),
+      Array.from({ length: hi - lo + 1 }, (_, k) => [lo, hi - k]),
+    ]
+    const extra = []
+    const extraTone = []
+    const idx = []
+    let v = base
+    for (const edge of edges) {
+      for (let k = 0; k < edge.length; k++) {
+        const [i, j] = edge[k]
+        const g = j * n + i
+        const h = height[g]
+        const t = tone ? tone[g] : h / elevation + 0.5
+        extra.push(xs[i], h, xs[j], xs[i], h - seal, xs[j])
+        extraTone.push(t, t)
+        if (k > 0) {
+          const a = v - 2
+          const b = v
+          // Facing in (the edges run round the slab one way): it is only
+          // ever seen from inside, past the edge. One face, so its normals
+          // are its own (both faces would cancel them).
+          idx.push(a, a + 1, b, b, a + 1, b + 1)
+        }
+        v += 2
+      }
+    }
+    const P = new Float32Array(positions.length + extra.length)
+    P.set(positions)
+    P.set(extra, positions.length)
+    const T = new Float32Array(tones.length + extraTone.length)
+    T.set(tones)
+    T.set(extraTone, tones.length)
+    return { positions: P, tones: T, index: idx }
+  }
+
   if (!Hz) {
+    const sealed = skirt(ground, tone ?? new Float32Array(n * n), n * n)
+    if (seal > 0) {
+      return {
+        ground: { position: sealed.positions, index: new Uint32Array([...index, ...sealed.index]), tone: tone ? sealed.tones : null },
+        water: { position: water, depth, index: new Uint32Array([...index, ...band]) },
+        lines: n,
+      }
+    }
     const groundIndex = new Uint32Array(index)
     const waterIndex = new Uint32Array([...index, ...band])
     return {
@@ -204,8 +262,9 @@ export function buildFarField({ baseField, world, elevation, resolution = 224, s
       ringIndex.push(p, q, p + segments, q, q + segments, p + segments)
     }
   }
+  const sealed = skirt(gAll, tAll, count)
   return {
-    ground: { position: gAll, index: new Uint32Array([...index, ...ringIndex]), tone: tAll },
+    ground: { position: sealed.positions, index: new Uint32Array([...index, ...ringIndex, ...sealed.index]), tone: sealed.tones },
     water: { position: wAll, depth: dAll, index: new Uint32Array([...index, ...band, ...ringIndex]) },
     lines: n,
   }
