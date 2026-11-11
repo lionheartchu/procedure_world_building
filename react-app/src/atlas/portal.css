@@ -386,17 +386,6 @@
 
 /* --- the note on what the images are --------------------------------------- */
 
-.portal-provenance {
-  position: relative;
-  margin: 0.8rem 0 0;
-  padding: 0 var(--gutter);
-  font-family: var(--sans);
-  font-size: 0.66rem;
-  letter-spacing: 0.04em;
-  text-align: center;
-  color: var(--ink-3);
-}
-
 /* --- narrow screens: one column ----------------------------------------------- */
 
 @media (max-width: 900px) {
@@ -460,11 +449,6 @@
     font-size: 1rem;
     opacity: 1;
     transform: none;
-  }
-
-  .portal-provenance {
-    margin-top: 2.6rem;
-    text-align: left;
   }
 }
 

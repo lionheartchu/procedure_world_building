@@ -130,8 +130,6 @@ export default function Portal() {
           })}
         </nav>
       </div>
-
-      <p className="portal-provenance">Conceptual illustrations, not screenshots or simulation output.</p>
     </main>
   )
 }

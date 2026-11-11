@@ -1,8 +1,9 @@
 # Residual Ecology — Project Direction
 
 *The sections up to "Current Direction" are the original September framing,
-kept as written. The October sections at the end say how far the
-implementation has come, and how the visual direction has moved.*
+kept as written. The October sections say how far the implementation had
+come, and how the visual direction moved; the November section at the end is
+the current one.*
 
 ## One-line concept
 
@@ -140,3 +141,70 @@ The working principles are in
 
 The current state of the project, and what is still open, is in
 [`docs/project-status-2026-10.md`](docs/project-status-2026-10.md).
+
+## November 2026: what disappears still participates
+
+*Added at the M3E checkpoint (`0423401`, 10 November). The sections above
+are kept as written; where they differ, this one is current.*
+
+**The concept: Residual Ecology. What disappears still participates.**
+After a resident is gone, its matter, the signals it gave off, and the
+traces it left can still shape the conditions for other lives.
+
+The world should feel like one interconnected, continually changing
+ecology with a shared history. It should keep its dreamy, sparse, ambiguous
+and slightly uncanny character.
+
+**Two directions, one project:**
+- **Explore** (`/`): the procedural studies, parameter exploration,
+  simulation inspection and the research Atlas (`/atlas`).
+- **Habitat** (`/habitat/…`): an embodied world to be in, built from those
+  systems.
+
+**What the words mean, as implemented** (each checked against the code):
+- **A resident** is one membrane lifeform with a lifecycle (forming,
+  holding, receding, releasing, ended) and a body of matter.
+- **A colony** is a local neighbourhood. Its placed structures (membranes,
+  strands, branching, tissue) are laid out once, and one lifecycle patch
+  runs its residents.
+- **Released films** carry part of a resident's body on the air and settle
+  as residue. New residents form only from residue that has lain a while.
+  Matter is conserved and only moves (`ledger()`, study 10).
+- **The airborne cue** is a signal and carries no matter. Residents
+  downwind answer it by their own state: a full one lets go early; one still
+  forming turns toward it, and later releases from the turned sheet (studies
+  19–20).
+- **Records.** Some recorded fields are read by the ecology: the residue
+  itself, when matter last arrived (the 22 s rest), and History's sediment
+  record for where a resident may form. Others are drawn only, such as the
+  cue's passage. **A recorded field is not automatically feedback.**
+- **The visitor's encounter** deforms a resident and is felt in movement. It
+  reads the resident's state and writes nothing to the ecological ledger
+  (study 22).
+
+**Not yet:**
+- **History's record and the colonies' placement** are still computed once.
+- **Nothing accumulates into larger forms.**
+- **Collective morphogenesis, a persistent accumulator and evolutionary
+  inheritance** are directions, not systems.
+
+**Next: distributed perception → behavioural response → accumulated
+morphology.**
+
+What each resident can perceive locally (air, water, terrain, light, its
+neighbours), how it answers by its own state, and how many such local
+answers and their residues might add up over time to shared spatial forms.
+Behaviour may take inspiration from mycelium: local sensing, distributed
+growth, branching, redistribution, reinforcement and dormancy; never its
+look. Genotype, phenotype and fitness are a lens for reviewing the system;
+optimisation and inheritance are later possibilities.
+
+An ambient illumination cycle may become an input, without a literal sun.
+No resident form or final structure is prescribed. The visitor stays a
+limited, local influence, and a signal stays distinct from matter.
+
+The questions and candidate first steps are in the
+[backlog](backlog.md#next-residual-morphogenesis-after-the-m3e-checkpoint).
+The presentation notes are in
+[`docs/presentation/`](docs/presentation/README.md).
+

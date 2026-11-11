@@ -307,7 +307,16 @@
 }
 
 .atlas-top.tone-dark .atlas-nav a {
-  color: rgba(232, 227, 248, 0.72);
+  font-weight: 500;
+  color: rgba(238, 234, 252, 0.88);
+}
+
+/* Over the landing's bright forms: a soft dark halo keeps the small type legible. */
+.atlas-top.tone-dark,
+.landing-kicker,
+.landing-text,
+.landing-actions .atlas-button {
+  text-shadow: 0 1px 14px rgba(30, 25, 74, 0.7), 0 0 2px rgba(30, 25, 74, 0.45);
 }
 
 .atlas-top.tone-dark .atlas-nav a:hover,
@@ -403,7 +412,7 @@
   font-size: 0.72rem;
   letter-spacing: 0.34em;
   text-transform: uppercase;
-  color: rgba(232, 227, 248, 0.8);
+  color: rgba(238, 234, 252, 0.9);
 }
 
 .landing-kicker::after {
@@ -441,7 +450,7 @@
   margin: 1rem 0 0;
   font-size: 1.14rem;
   line-height: 1.55;
-  color: rgba(236, 232, 250, 0.86);
+  color: rgba(244, 241, 253, 0.94);
 }
 
 .landing-actions {
@@ -456,7 +465,7 @@
 }
 
 .landing-actions .atlas-button:not(.is-primary) {
-  color: rgba(232, 227, 248, 0.74);
+  color: rgba(238, 234, 252, 0.88);
 }
 
 /* The portal's styles are in portal.css. */

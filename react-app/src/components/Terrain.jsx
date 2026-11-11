@@ -173,6 +173,14 @@ function createTerrainMaterial({ far = false } = {}) {
         // ...and the dry ground's tint, well above it (white: none).
         uDryTint: { value: new THREE.Color(1, 1, 1) },
         uRecordGain: { value: 0 },
+        // The Habitat's M3R (docs/21-habitat-m3.md), 0 everywhere else:
+        //   - uWetJoin: the damp ground runs on under the water, so the
+        //     waterline is not a step from damp to dry-coloured bed
+        //   - uNearGrain: a fine grain in the ground near the eye (strength,
+        //     and the distances it fades over), so the ground at the
+        //     visitor's feet reads as a surface rather than flat colour
+        uWetJoin: { value: 0 },
+        uNearGrain: { value: new THREE.Vector3(0, 2, 6) },
       },
     ]),
     vertexShader: /* glsl */ `
@@ -291,6 +299,8 @@ function createTerrainMaterial({ far = false } = {}) {
       uniform vec3 uWetSky;
       uniform vec3 uDryTint;
       uniform float uRecordGain;
+      uniform float uWetJoin;
+      uniform vec3 uNearGrain;
 
       varying float vHeight;
       varying float vSediment;
@@ -588,14 +598,31 @@ function createTerrainMaterial({ far = false } = {}) {
         // ground beside it.
         if (uWet.y > 0.0) {
           float aboveW = vWorldPos.y - uWaterY;
-          float damp = max(1.0 - smoothstep(0.0, uWet.x, aboveW), smoothstep(0.1, 0.6, stream.r)) * step(0.0, aboveW);
-          damp *= 1.0 - 0.75 * smoothstep(0.35, 0.85, sed);
           float bed = aboveW < 0.0 ? 1.0 - exp(aboveW / max(uWet.w, 1e-3)) : 0.0;
-          float shade = damp * uWet.y + bed * (uWet.y + 0.2);
+          float damp;
+          float shade;
+          float sheen;
+          if (uWetJoin > 0.5) {
+            // M3R: as damp at the line as just above it, and wet on below
+            // it, the bed deepening from there: one gradient through the
+            // line. (Before, damp ground stopped at the line and the bed
+            // began from nothing, a step of 30% in value: the hard edge
+            // along every shore.) The record drains only above the water.
+            damp = max(1.0 - smoothstep(0.0, uWet.x, aboveW), smoothstep(0.1, 0.6, stream.r));
+            damp *= 1.0 - 0.75 * smoothstep(0.35, 0.85, sed) * smoothstep(0.0, 0.05, aboveW);
+            shade = damp * uWet.y + bed * 0.2;
+            // The sheen belongs to the exposed wet ground; it fades just under the line.
+            sheen = damp * smoothstep(-0.03, 0.0, aboveW);
+          } else {
+            damp = max(1.0 - smoothstep(0.0, uWet.x, aboveW), smoothstep(0.1, 0.6, stream.r)) * step(0.0, aboveW);
+            damp *= 1.0 - 0.75 * smoothstep(0.35, 0.85, sed);
+            shade = damp * uWet.y + bed * (uWet.y + 0.2);
+            sheen = damp;
+          }
           lit *= 1.0 - shade;
           lit = mix(lit, lit * vec3(0.97, 0.95, 1.06), clamp(damp + bed, 0.0, 1.0));
           float graze = pow(1.0 - clamp(dot(ns, viewDir), 0.0, 1.0), 4.0) * smoothstep(0.95, 0.995, ns.y);
-          emit += uWetSky * graze * damp * uWet.z;
+          emit += uWetSky * graze * sheen * uWet.z;
           // Ground the water never reaches is dry: a shade warmer, toward pearl.
           float dry = (1.0 - damp) * smoothstep(uWet.x, uWet.x * 4.0, aboveW);
           lit = mix(lit, lit * uDryTint, dry);
@@ -631,6 +658,16 @@ function createTerrainMaterial({ far = false } = {}) {
         if (uUnderwater > 0.0) {
           float under = smoothstep(0.0, 0.04 * E, uWaterY - vWorldPos.y) * uUnderwater;
           lit = lit * (1.0 + under * 0.6) + uSedimentTint * under * 0.03;
+        }
+
+        // M3R: a fine grain near the eye, in the ground's own colour
+        // (multiplied, so its value and hue hold), gone by a few units off.
+        if (uNearGrain.x > 0.0) {
+          float k = uNearGrain.x * (1.0 - smoothstep(uNearGrain.y, uNearGrain.z, length(cameraPosition - vWorldPos)));
+          if (k > 0.0) {
+            float gr = valueNoise(vWorldPos.xz * 14.0 + 2.7) * 0.55 + valueNoise(vWorldPos.xz * 37.0 + 8.1) * 0.45;
+            lit *= 1.0 + (gr - 0.5) * k;
+          }
         }
 
         vec3 col = lit + emit;
@@ -681,7 +718,7 @@ function createTerrainMaterial({ far = false } = {}) {
  *
  * No reflection pass, no refraction, no render target.
  */
-function createWaterMaterial({ far = false, cue = null } = {}) {
+function createWaterMaterial({ far = false, cue = null, exact = false, clear = false } = {}) {
   const defines = {}
   // The Habitat's far water (see `far` on Terrain): the same water beyond
   // the slab, its depth from the far ground, taking over where the slab's
@@ -690,6 +727,12 @@ function createWaterMaterial({ far = false, cue = null } = {}) {
   // The Habitat's spatial studies (`cue` on Terrain): a lit waterline, and a
   // ring on the surface under a visitor hovering over the water.
   if (cue) defines.CUE = ''
+  // The Habitat's M3R (docs/21-habitat-m3.md): `exact`, its depth from the
+  // ground exactly as the terrain draws it (uGround), not the simulation's
+  // 8-bit copy; `clear`, as opaque as the eye's path through it is long,
+  // with a fine ripple near the eye (uClear).
+  if (exact) defines.EXACT = ''
+  if (clear) defines.CLEAR = ''
   return new THREE.ShaderMaterial({
     defines,
     fog: true,
@@ -733,6 +776,15 @@ function createWaterMaterial({ far = false, cue = null } = {}) {
         // broad soft bands, as on real still water, and the water reads as a
         // surface rather than as more lavender ground.
         uSwell: { value: 0.9 },
+        // M3R (`exact`): the terrain's own heights at its vertices (res + 1
+        // a side), its grid, and the Dormant reading's breathing.
+        uGround: { value: null },
+        uGroundRes: { value: 1 },
+        uBreathe: { value: 0 },
+        // M3R (`clear`): the path through the water (units) that turns the
+        // veil two thirds of the way opaque; the ripple's slope near the eye,
+        // and the distances it fades over.
+        uClear: { value: new THREE.Vector4(0.25, 0, 1.5, 6) },
       },
     ]),
     vertexShader: /* glsl */ `
@@ -780,6 +832,14 @@ function createWaterMaterial({ far = false, cue = null } = {}) {
       uniform float uReflect;
       uniform vec2 uVeil;
       uniform float uSwell;
+      #ifdef EXACT
+      uniform sampler2D uGround;
+      uniform float uGroundRes;
+      uniform float uBreathe;
+      #endif
+      #ifdef CLEAR
+      uniform vec4 uClear;
+      #endif
 
       varying vec3 vWorldPos;
       #ifdef FAR
@@ -819,9 +879,19 @@ function createWaterMaterial({ far = false, cue = null } = {}) {
         if (bounds <= 0.0) discard;
         #else
         vec4 sim = texture2D(uSim, clamp(fuv, 0.0, 1.0));
+        #ifdef EXACT
+        // The ground as the terrain draws it: its height at the mesh's own
+        // vertices (texel centres on them), lifted by History's sediment and
+        // breathing with it as the terrain's vertices are.
+        vec2 guv = (clamp(fuv, 0.0, 1.0) * uGroundRes + 0.5) / (uGroundRes + 1.0);
+        float sedHere = sim.r * uSedScale;
+        float ground = texture2D(uGround, guv).r + sedHere * uSedLift
+                     + sin(uTime * 0.35 + vWorldPos.x * 0.18 + vWorldPos.z * 0.14) * uBreathe * sedHere * 0.6;
+        #else
         // B carries the ground height over -0.5…1.5: the relief lifts land
         // above 1 and deepens basins below 0, which 0…1 clipped.
         float ground = (sim.b * 2.0 - 1.0) * uElevation + sim.r * uSedScale * uSedLift;
+        #endif
         float depth = vWorldPos.y - ground;
         if (depth <= 0.0) discard;
         float bounds = smoothstep(0.0, 0.06, min(edgeDist.x, edgeDist.y));
@@ -833,7 +903,12 @@ function createWaterMaterial({ far = false, cue = null } = {}) {
         // Both measured against the relief, so a taller landform does not
         // turn every basin into open water.
         float E = max(uElevation, 0.001);
+        #ifdef EXACT
+        // Its depth is exact here, so it can begin at the line itself.
+        float shore = smoothstep(0.0, 0.07 * E, depth);
+        #else
         float shore = smoothstep(0.01 * E, 0.08 * E, depth);
+        #endif
         float deep = smoothstep(0.02 * E, 0.33 * E, depth);
 
         // A slow, broad tilt. Small on purpose: it is what separates this
@@ -843,6 +918,21 @@ function createWaterMaterial({ far = false, cue = null } = {}) {
         float s0 = swell(p);
         vec2 grad = vec2(swell(p + vec2(e, 0.0)) - s0, swell(p + vec2(0.0, e)) - s0) / e;
         vec3 nrm = normalize(vec3(-grad.x * uSwell, 1.0, -grad.y * uSwell));
+        #ifdef CLEAR
+        {
+          // A fine ripple near the eye only: at the visitor's feet the
+          // surface has something of its own to read, and far off it stays
+          // the slow swell (so no new banding there).
+          float nearR = uClear.y * (1.0 - smoothstep(uClear.z, uClear.w, length(cameraPosition - vWorldPos)));
+          if (nearR > 0.0) {
+            vec2 q = p * 3.3 + vec2(uTime * 0.06, -uTime * 0.045);
+            float f0 = valueNoise(q) * 0.6 + valueNoise(q * 2.4 + 4.1) * 0.4;
+            float fx = valueNoise(q + vec2(0.1, 0.0)) * 0.6 + valueNoise((q + vec2(0.1, 0.0)) * 2.4 + 4.1) * 0.4;
+            float fz = valueNoise(q + vec2(0.0, 0.1)) * 0.6 + valueNoise((q + vec2(0.0, 0.1)) * 2.4 + 4.1) * 0.4;
+            nrm = normalize(nrm + vec3(-(fx - f0), 0.0, -(fz - f0)) * (nearR / 0.1 * 0.3));
+          }
+        }
+        #endif
 
         vec3 viewDir = normalize(cameraPosition - vWorldPos);
         float facing = clamp(dot(nrm, viewDir), 0.0, 1.0);
@@ -876,6 +966,12 @@ function createWaterMaterial({ far = false, cue = null } = {}) {
         // deepest basin lets the terrain's form read through, so the terrain
         // stays the subject and the water reads as something pooled in it.
         float alpha = mix(uVeil.x, uVeil.y, deep) * uClarity;
+        #ifdef CLEAR
+        // As much water as the eye looks through: shallows seen from above
+        // are clear to their bed, water seen at a slant (or deep) is dense.
+        float path = depth / max(abs(viewDir.y), 0.06);
+        alpha = uVeil.y * (1.0 - exp(-path / uClear.x)) * uClarity;
+        #endif
         if (uUnderwater > 0.0) alpha *= 1.0 - 0.45 * uUnderwater;
         alpha = shore * bounds * clamp(alpha + fres * 0.4 + glint * 0.2 + light * 0.06, 0.0, 0.8);
         // The Water surface control runs the whole way to nothing, so the
@@ -1103,17 +1199,22 @@ export default function Terrain({
   const { resolution, elevation, waterLevel } = params
 
   const material = useMemo(() => createTerrainMaterial(), [])
+  // The Habitat's M3R: its water's exact depth and clear shallows (off
+  // everywhere else, and then not compiled).
+  const exactWater = !!shader?.exactDepth
+  const clearWater = !!shader?.clear
   const waterMaterial = useMemo(() => {
-    const m = createWaterMaterial({ cue })
+    const m = createWaterMaterial({ cue, exact: exactWater, clear: clearWater })
     if (cue) m.uniforms.uCue = cue
     return m
-  }, [cue])
+  }, [cue, exactWater, clearWater])
   // The Habitat only (`far`: the far field's water, { position, depth, index }
   // around the slab, lib/farField.js). It shares the slab water's uniforms,
   // so the two are one water.
   const farWater = useMemo(() => {
     if (!far) return null
-    const m = createWaterMaterial({ far: true })
+    // (M3R's `clear` too, so the water reads the same across the slab's edge.)
+    const m = createWaterMaterial({ far: true, clear: clearWater })
     m.uniforms = waterMaterial.uniforms
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.BufferAttribute(far.position, 3))
@@ -1121,7 +1222,7 @@ export default function Terrain({
     geo.setIndex(new THREE.BufferAttribute(far.index, 1))
     geo.computeBoundingSphere()
     return { material: m, geometry: geo }
-  }, [far, waterMaterial])
+  }, [far, waterMaterial, clearWater])
   useEffect(
     () => () => {
       farWater?.material.dispose()
@@ -1238,6 +1339,25 @@ export default function Terrain({
     return geo
   }, [field, resolution, elevation, size])
 
+  // M3R (`exactDepth`): the ground's heights exactly as the mesh has them, at
+  // its own vertices, in half floats (about 0.1% of a unit, where the
+  // simulation's copy steps by 0.015 on a coarser grid), for the water.
+  const groundTexture = useMemo(() => {
+    if (!exactWater) return null
+    const n = resolution + 1
+    const position = geometry.attributes.position
+    const data = new Uint16Array(n * n)
+    for (let k = 0; k < n * n; k++) data[k] = THREE.DataUtils.toHalfFloat(position.getY(k))
+    const t = new THREE.DataTexture(data, n, n, THREE.RedFormat, THREE.HalfFloatType)
+    t.minFilter = THREE.LinearFilter
+    t.magFilter = THREE.LinearFilter
+    t.wrapS = THREE.ClampToEdgeWrapping
+    t.wrapT = THREE.ClampToEdgeWrapping
+    t.needsUpdate = true
+    return t
+  }, [exactWater, geometry, resolution])
+  useEffect(() => () => groundTexture?.dispose(), [groundTexture])
+
   const waterY = (waterLevel - 0.5) * elevation
   const waterRef = useRef(null)
   const accumulator = useRef(0)
@@ -1294,6 +1414,9 @@ export default function Terrain({
     set('uSmoothLight', shader?.smoothLight ?? 0)
     set('uReliefLight', shader?.reliefLight ?? 0)
     set('uRecordGain', shader?.recordGain ?? 0)
+    // M3R's ground (0 everywhere else: as before).
+    set('uWetJoin', shader?.wetJoin ?? 0)
+    if (uniforms.uNearGrain) uniforms.uNearGrain.value.set(...(shader?.nearGrain ?? [0, 2, 6]))
     if (uniforms.uWet) uniforms.uWet.value.set(...(shader?.wet ?? [0, 0, 0, 0]))
     if (uniforms.uWetSky && shader?.skyHorizon) uniforms.uWetSky.value.copy(shader.skyHorizon)
     if (uniforms.uDryTint) uniforms.uDryTint.value.setRGB(...(shader?.dryTint ?? [1, 1, 1]))
@@ -1337,6 +1460,13 @@ export default function Terrain({
     if (shader?.waterShallow && water.uShallow) water.uShallow.value.copy(shader.waterShallow)
     if (shader?.waterDeep && water.uDeepWater) water.uDeepWater.value.copy(shader.waterDeep)
     setWater('uTime', t)
+    // M3R: the terrain's own heights, and its breathing (Dormant's pulse), so the depth matches it.
+    if (groundTexture) {
+      setWater('uGround', groundTexture)
+      setWater('uGroundRes', resolution)
+      setWater('uBreathe', shader?.mode > 1.5 && shader?.mode < 2.5 ? shader.pulse : 0)
+    }
+    if (water.uClear && shader?.clear) water.uClear.value.set(...shader.clear)
     setWater('uWater', shader ? shader.water : 0.85)
     setWater('uLight', shader ? shader.caustics : 0)
     setWater('uElevation', elevation)

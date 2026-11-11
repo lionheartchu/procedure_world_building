@@ -361,7 +361,29 @@ SPACES.m2 = {
  * leads. Featuring another space means changing only this; every space
  * keeps its own route, `/habitat/<key>`, as well.
  */
-export const FEATURED = 'm2'
+// M3S (docs/27-sheath-and-passage.md), the latest checkpoint; M2 until then.
+export const FEATURED = 'm3s'
+
+/**
+ * M3 (docs/21-habitat-m3.md): M2 with three changes, none to the ecology:
+ *   - the thin white line where the slab meets the far ground sealed (a
+ *     skirt hung from the far ground's inner edge: `seal`, buildFarField)
+ *   - calmer water (`open2`): D1's swell and bed darkening made broad
+ *     blotches and far bands; both eased, the depth kept
+ *   - the cue drawn the same wherever the visitor stands (`cueGlobal`: the
+ *     most active, not the nearest), and the residue and old contours drawn
+ *     by how long they have lain (`residueAge`), so the ecology's recent
+ *     past reads at any moment
+ */
+SPACES.m3 = {
+  ...SPACES.m2,
+  key: 'm3',
+  title: 'M3 · coherent ground, readable time (exploration)',
+  lookKey: 'open2',
+  seal: 0.6,
+  cueGlobal: true,
+  residueAge: true,
+}
 
 /**
  * D1's look: open, given depth. The same sky, a step less white at the
@@ -415,6 +437,161 @@ LOOKS.open1 = {
     fog: 0.019,
     sky: { horizon: '#D3CBE8', mid: '#B0A8D8', zenith: '#827CBB', glow: '#EDE6F3', glowDir: [-0.6, 0, -0.55], glowGain: 0.45, encode: true },
   },
+}
+
+/**
+ * M3's look: D1's, with the water calmer. D1's swell (2.2) laid the sky's
+ * gradient over the shallows in broad light and dark blotches, and its bed
+ * darkened over 0.08 units of depth, so every ripple of the shallow bed
+ * showed as a band. The swell is D's again (0.9) and the bed deepens over
+ * 0.2 units: the water stays deeper than the ground beside it.
+ */
+LOOKS.open2 = {
+  ...LOOKS.open1,
+  ground: {
+    ...LOOKS.open1.ground,
+    swell: 0.9,
+    wet: [0.15, 0.3, 0.3, 0.2],
+  },
+}
+
+/**
+ * M3R (docs/21-habitat-m3.md, "M3R"): M3 at close range. Its world,
+ * simulation, palette and light exactly; what changes is how they read from
+ * a visitor's eye height:
+ *   - the shoreline: the water's depth from the ground exactly as the
+ *     terrain draws it (`exactDepth`; the simulation's 8-bit, coarser copy
+ *     cut its edge into steps), and the damp ground running on under the
+ *     water (`wetJoin`; D1's damp band stopped at the line, a hard edge)
+ *   - the water: as opaque as the eye's path through it (`clear`: shallows
+ *     seen from above clear to their bed, water at a slant dense), with a
+ *     fine ripple near the eye; the ground a fine grain there (`nearGrain`)
+ *   - a sheet near the eye thinning (`nearAlpha`), so passing one does not
+ *     fill the view with a pale wall
+ *   - the lifecycle residents drawn for close range (`closeRange`,
+ *     LifecycleLayer): their posture rising and opening, sagging, lying
+ *     down onto the ground under them, as one bend that keeps the sheet's
+ *     length; their sheet closed but where their films left
+ */
+LOOKS.open3 = {
+  ...LOOKS.open2,
+  form: { ...LOOKS.open2.form, nearAlpha: [0.35, 1.3, 0.3] },
+  ground: {
+    ...LOOKS.open2.ground,
+    exactDepth: true,
+    wetJoin: 1,
+    clear: [0.22, 0.35, 1.2, 5],
+    nearGrain: [0.3, 1.5, 5],
+  },
+}
+
+SPACES.m3r = {
+  ...SPACES.m3,
+  key: 'm3r',
+  title: 'M3R · close range (refinement of M3)',
+  lookKey: 'open3',
+  closeRange: true,
+}
+
+/**
+ * M3E (docs/22-habitat-m3e.md): M3R with one encounter, a prototype. Its
+ * world, simulation and look are M3R's, with:
+ *   - `encounter`: whichever standing resident the visitor comes near yields
+ *     to them, as its own tension (its matter, its stage) has it
+ *     (ResidentEncounter, lib/encounter.js); nothing it does reaches the
+ *     lifecycle
+ *   - `kinFilms`: the films a resident releases drawn as pieces of its own
+ *     sheet, as large as the matter they carry (the air's opal skins read as
+ *     soap bubbles)
+ *   - `unstick`: walking along or under a form no longer braked by the body's
+ *     height spring pressing into it (lib/presence.js)
+ *   - `live` (look): a live site's light in the membranes' own pale tone, not
+ *     mint, which on these pale skies read as the cue's ice blue
+ */
+LOOKS.open3e = {
+  ...LOOKS.open3,
+  form: { ...LOOKS.open3.form, live: '#DCD5F2' },
+}
+
+SPACES.m3e = {
+  ...SPACES.m3r,
+  key: 'm3e',
+  title: 'M3E · an encounter (prototype)',
+  lookKey: 'open3e',
+  encounter: true,
+  kinFilms: true,
+  unstick: true,
+}
+
+/**
+ * M3N (docs/24-noticing.md): M3E, with residents noticing the visitor before
+ * any touch (`notice`, lib/notice.js). The nearest one or two frost on the
+ * visitor's side, as densely as the matter they hold, and draw back as
+ * their tension has it; old contours frost faintly as they are passed.
+ * Presentation only: the simulation is M3E's exactly.
+ */
+SPACES.m3n = {
+  ...SPACES.m3e,
+  key: 'm3n',
+  title: 'M3N · noticed (prototype)',
+  notice: true,
+}
+
+/**
+ * M3L (docs/25-living-membrane.md): M3N with its residents drawn as living
+ * membranes (`living`, LifecycleLayer): fluted and ruffled as deep as the
+ * matter they hold, gathering when noticed and opening again after. And an
+ * arrival that looks along a short walk past two standing residents
+ * (`arriveAt`: where, and what it looks at). Presentation only: the
+ * simulation is M3N's (and M3E's) exactly.
+ */
+SPACES.m3l = {
+  ...SPACES.m3n,
+  key: 'm3l',
+  title: 'M3L · living membrane (prototype)',
+  living: true,
+  // On open ground between colonies 2 and 4, looking along a short walk to
+  // colony 4's #7 (about five units ahead) and colony 5's #3 beyond it.
+  arriveAt: { at: [-6.2, 3.4], look: [-0.5, 0.6, 4.7] },
+}
+
+/**
+ * M3C (docs/26-colony-motion.md): M3L refined toward the colony encounter
+ * study, a prototype. The membranes' folds broader and turning across them,
+ * gathering into a cupped shell (`living: 'fan'`); and the colony's strands
+ * that end in the air drawn as tendrils, each drifting on its own and
+ * briefly registering a stranger before it returns to its drift
+ * (`tendrils`, lib/tendrils.js). Presentation only: the simulation is
+ * M3N's exactly.
+ */
+SPACES.m3c = {
+  ...SPACES.m3l,
+  key: 'm3c',
+  title: 'M3C · colony motion (prototype)',
+  living: 'fan',
+  tendrils: true,
+}
+
+/**
+ * M3S (docs/27-sheath-and-passage.md): M3C with its tendrils grown out of
+ * the colony rather than set on it, and its films' real passage drawn to be
+ * followed, a prototype. Presentation only: the simulation is M3N's
+ * exactly, and nothing travels along a tendril.
+ *   - `tendrils: 'sheath'`: a ribbon of membrane at a reach's root, an
+ *     anchor's crest carried on past its lip as a blade, one continuous
+ *     taper to a teardrop bulb grown from the tip, no branchlets, and a
+ *     gentler registering (no periscope lift)
+ *   - `passage`: a film as it comes away (a thin film's colours round the
+ *     opening it leaves), in flight (bands of the same colours crossing it
+ *     as far as it actually travels, and a fine fading trace of the path
+ *     it took), and as it settles (it spreads and clears into the residue)
+ */
+SPACES.m3s = {
+  ...SPACES.m3c,
+  key: 'm3s',
+  title: 'M3S · sheathed tendrils, a visible passage (prototype)',
+  tendrils: 'sheath',
+  passage: true,
 }
 
 /** A space with a look applied (or as it is). */

@@ -203,10 +203,18 @@ export class Lifecycle {
    *                 (`gather`). None: as before, exactly.
    * @param worldOffset with a commons: this lifecycle's steps at arrival (its age / step)
    */
-  constructor({ world, scatter, history, field, streams, simParams, air, feedback = true, seed = 1, conduit = false, fold = false, colony = 0, holds = LIFECYCLE.firstHolds, airNear = false, commons = null, worldOffset = 0 }) {
+  constructor({ world, scatter, history, field, streams, simParams, air, feedback = true, seed = 1, conduit = false, fold = false, colony = 0, holds = LIFECYCLE.firstHolds, airNear = false, commons = null, worldOffset = 0, respond = 'full' }) {
     this.world = world
     this.history = history
     this.feedback = feedback
+    /**
+     * Study 23's experiment (the Habitat's `?respond=matter`; 'full' is M1's
+     * rule): which standing resident the cue can set off. 'full': only one
+     * that has taken up all its body needs. 'matter': any, once the cue it
+     * has gathered, weighed by how full it is, passes the same threshold
+     * (a full one exactly as before; a half-full one needs twice the cue).
+     */
+    this.respond = respond
     this.simParams = simParams
     this.air = air
     this.seed = seed | 0
@@ -431,8 +439,11 @@ export class Lifecycle {
           }
         }
       }
-      const ready = r.stage === 'holding' && r.taken >= K.full * r.need && r.stageTime >= K.stood
-      if (ready && r.dose >= K.threshold && r.stageTime < r.hold) {
+      const ready =
+        this.respond === 'matter'
+          ? r.stage === 'holding' && r.stageTime >= K.stood && r.dose * Math.min(1, r.taken / r.need) >= K.threshold
+          : r.stage === 'holding' && r.taken >= K.full * r.need && r.stageTime >= K.stood && r.dose >= K.threshold
+      if (ready && r.stageTime < r.hold) {
         r.hold = r.stageTime
         r.respondedAt = this.t
         const top = this.commons.top

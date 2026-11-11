@@ -25,10 +25,10 @@ export const CHAPTERS = [
     id: 'world',
     number: '01',
     title: 'World',
-    kicker: 'Terrain · water · sediment · atmosphere',
+    kicker: 'Terrain · water · air · membranes · residue · light',
     teaser: 'A ground that carries a history.',
     intro:
-      'A ground that carries a history: a landform cut by water veins, a record of sediment laid down before anything grows, and the air drifting over all of it.',
+      'One world, shared by Explore and the Habitat: a landform cut by water veins, a record of sediment laid down before anything grows, colonies where that record allows, and the air drifting over all of it.',
     hero: {
       asset: 'stream',
       notes: [
@@ -57,7 +57,7 @@ export const CHAPTERS = [
       },
     ],
     observations: [
-      'Explore shows a world recomputed from its parameters and a precomputed history. Its air is alive; its ecology does not develop while it is watched.',
+      'Explore is the world as a design tool: change a parameter and it is generated again. The Habitat is the same composition as a place to walk through, where its lifecycles run.',
       'The same parameters always generate the same world.',
     ],
     questions: [

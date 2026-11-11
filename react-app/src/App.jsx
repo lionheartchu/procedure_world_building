@@ -133,6 +133,8 @@ function App() {
   // Explore is the world as one place, and where the app opens; the studies
   // it grew from are one menu away, each unchanged.
   const [view, setView] = useState('explore')
+  // Explore's panel folded away (its button or P): the world fills the view.
+  const [panelFolded, setPanelFolded] = useState(false)
   // Open on the studies when the Atlas sent us here for them.
   const [studiesOpen, setStudiesOpen] = useState(() => window.history.state?.studies === true)
   const [volumeParams, setVolumeParams] = useState(DEFAULT_VOLUME)
@@ -538,14 +540,16 @@ function App() {
   // The Habitat replaces Explore on its own page (Root), so only one world runs.
   const openHabitat = softLink(HABITAT_PATH)
 
-  // W toggles wireframe on the terrain.
+  // W toggles wireframe on the terrain; P folds Explore's panel away and back.
   useEffect(() => {
     const onKeyDown = (event) => {
-      if (event.key !== 'w' && event.key !== 'W') return
+      const key = event.key.toLowerCase()
+      if (key !== 'w' && key !== 'p') return
       if (event.metaKey || event.ctrlKey || event.altKey) return
       const tag = event.target?.tagName
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
-      setWireframe((value) => !value)
+      if (key === 'w') setWireframe((value) => !value)
+      else setPanelFolded((value) => !value)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -651,6 +655,8 @@ function App() {
           streams={streamLook}
           growing={growing}
           onGrow={handleGrow}
+          collapsed={panelFolded}
+          onToggle={() => setPanelFolded((value) => !value)}
         />
       ) : view === 'volume' ? (
         <VolumePanel

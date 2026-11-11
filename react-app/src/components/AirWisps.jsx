@@ -299,7 +299,7 @@ const VERTEX = /* glsl */ `
     bool fromCue = false;
     #ifdef CUE
     vec2 cc = cueAt(p.xz);
-    cueK = 1.0 - exp(-cc.x / uCueRef);
+    cueK = (1.0 - exp(-cc.x / uCueRef)) * (colonySource(src) ? uCueFilaments : 1.0);
     cueT = cc.y;
     fromCue = cueSource(src);
     #endif
@@ -532,6 +532,10 @@ function cueUniforms() {
     uCueTime: { value: 0 },
     uCueCarry: { value: 0.9 },
     uCueHeight: { value: 0.5 },
+    // Whether the colonies' incoming filaments take the cue's colour (M2: 1).
+    // They follow the visitor's nearest colonies, so in M3 (0) they do not:
+    // the cue's colour is then the same wherever the visitor stands.
+    uCueFilaments: { value: 1 },
   }
 }
 
@@ -542,12 +546,18 @@ function cueUniforms() {
  * much: the simulated cue at that place now). Read from the commons; it
  * changes nothing there.
  */
-function cueNear(commons, at, slots) {
+function cueNear(commons, at, slots, global = false) {
   const K = commons.K
+  // M3 (`global`): what is drawn does not depend on where the visitor stands,
+  // only on what the cue is doing: the strongest puffs and the most active
+  // release sites anywhere in sight (WISP_CUE.visible), not the nearest. (In
+  // M2, choosing the nearest made colour appear as the visitor approached,
+  // which could read as the visitor's own doing.)
+  const reach = global ? WISP_CUE.visible : WISP_CUE.near
   const puffs = []
   for (const q of commons.now()) {
     const d = Math.hypot(q.x - at[0], q.z - at[1])
-    if (d < WISP_CUE.near + q.r) puffs.push(q)
+    if (d < reach + q.r) puffs.push(q)
   }
   puffs.sort((a, b) => b.s - a.s)
   puffs.length = Math.min(puffs.length, WISP_CUE.puffs)
@@ -557,7 +567,7 @@ function cueNear(commons, at, slots) {
     const e = commons.releases[i]
     if (e.n < since) break
     const key = e.colony + ':' + e.resident
-    if (!latest.has(key) && Math.hypot(e.x - at[0], e.z - at[1]) < WISP_CUE.near) latest.set(key, e)
+    if (!latest.has(key) && Math.hypot(e.x - at[0], e.z - at[1]) < reach) latest.set(key, e)
   }
   // Keep each slot with its resident while it is still letting cue out; fill free ones nearest first.
   const now = commons.n
@@ -573,7 +583,9 @@ function cueNear(commons, at, slots) {
     if (slot.w < 0.01) slot.key = null
   }
   const free = slots.filter((s) => !s.key)
-  const waiting = [...latest.entries()].sort((a, b) => Math.hypot(a[1].x - at[0], a[1].z - at[1]) - Math.hypot(b[1].x - at[0], b[1].z - at[1]))
+  // Nearest first (M2), or (M3) most cue leaving there now first.
+  const strength = (e) => commons.cueAt(e.x, e.z, now)
+  const waiting = [...latest.entries()].sort(global ? (a, b) => strength(b[1]) - strength(a[1]) : (a, b) => Math.hypot(a[1].x - at[0], a[1].z - at[1]) - Math.hypot(b[1].x - at[0], b[1].z - at[1]))
   for (const slot of free) {
     const next = waiting.shift()
     if (!next) {
@@ -597,7 +609,7 @@ const regionsShown = (amount) => (amount <= 0 ? 0 : Math.min(WISPS.regions, Math
  * same field as the dust. `time` is the air's own clock and `floor` its floor
  * (AmbientAir).
  */
-export default function AirWisps({ floor, floorTexture, time, drift, curl, amount, strength, colonyData, colony, debug, cue = null, colonyRef = null }) {
+export default function AirWisps({ floor, floorTexture, time, drift, curl, amount, strength, colonyData, colony, debug, cue = null, colonyRef = null, cueGlobal = false }) {
   // M2 (`cue`, the commons): the cue drawn in the wisps; `colonyRef`, the
   // visitor's nearest colonies (AmbientAir's, following), so the colonies'
   // incoming air is drawn where the visitor is.
@@ -862,10 +874,11 @@ export default function AirWisps({ floor, floorTexture, time, drift, curl, amoun
     const u = sim.variable.material.uniforms
     setAir(u, state)
     if (cueOn) {
-      const puffs = cueNear(cue, [camera.position.x, camera.position.z], slots)
+      const puffs = cueNear(cue, [camera.position.x, camera.position.z], slots, cueGlobal)
       const K = cue.K
       const apply = (cu) => {
         cu.uCueTime.value = cue.n * K.step
+        cu.uCueFilaments.value = cueGlobal ? 0 : 1
         cu.uCueCarry.value = K.carry
         cu.uCueHeight.value = K.height
         slots.forEach((sl, k) => cu.uCueSlot.value[k].set(sl.x, 0.35, sl.z, sl.w))

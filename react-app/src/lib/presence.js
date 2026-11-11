@@ -80,6 +80,8 @@ export const SMOOTH = {
   hard: 0.18,
   /** Pressed into a form, it is eased out at this speed per unit of overlap (1/s). */
   separate: 9,
+  /** M3E (`unstick`): the cushion's easing at the body (1/s), rising from nothing at its edge. */
+  cushionRate: 14,
 }
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v)
@@ -295,7 +297,7 @@ export class Presence {
    * the Habitat's encounter). Their surfaces are left out of `proxy`; each
    * step they take part of a press into them as their own movement.
    */
-  constructor({ world, proxy, colonies = null, blooms = null, contacts = [], smooth = false, bound = PRESENCE.bound, nearAir = false }) {
+  constructor({ world, proxy, colonies = null, blooms = null, contacts = [], smooth = false, bound = PRESENCE.bound, nearAir = false, unstick = false }) {
     this.world = world
     this.proxy = proxy
     this.contacts = contacts
@@ -303,6 +305,8 @@ export class Presence {
     this.bound = bound
     /** Smooth motion (SMOOTH): off unless asked for, so every other view moves as before. */
     this.smooth = smooth
+    /** M3E: the forms' cushion as a gentle rate (moveSmooth); off, as before. */
+    this.unstick = unstick
     this.acc = [0, 0]
     this.colonyAir = colonyAirData(colonies, blooms, nearAir ? { all: true } : undefined)
     this.floorProbe = { at: (x, z) => floorAt(world, x, z) }
@@ -489,14 +493,20 @@ export class Presence {
       // a little nearer than the nearest point (so nothing is met past an edge).
       const d = clamp(h.plane, h.d - 0.03, h.d)
       const n = [h.nx, h.ny, h.nz]
+      // M3E (`unstick`): the cushion as a rate (per second), gentle at its
+      // edge and firm only near the body. As a share of the speed into the
+      // surface taken every frame, it held the visitor about 0.55 from every
+      // form (never the body's 0.3) and made a slant along one crawl, more so
+      // at higher frame rates. The body's own reach still holds them out.
+      const cushion = (x) => (this.unstick ? 1 - Math.exp(-M.cushionRate * x * x * dt) : x)
       const into = -(this.v[0] * n[0] + this.v[1] * n[1] + this.v[2] * n[2])
       if (into > 0) {
-        const s = smoothstep(P.cushion, P.reach, d)
+        const s = cushion(smoothstep(P.cushion, P.reach, d))
         for (let i = 0; i < 3; i++) this.v[i] += n[i] * into * s
       }
       const carriedInto = -(this.carriedBy[0] * n[0] + this.carriedBy[1] * n[2])
       if (carriedInto > 0) {
-        const s = smoothstep(P.cushion, P.reach, d)
+        const s = cushion(smoothstep(P.cushion, P.reach, d))
         this.carriedBy[0] += n[0] * carriedInto * s
         this.carriedBy[1] += n[2] * carriedInto * s
       }

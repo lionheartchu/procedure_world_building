@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import { buildScatterGeometry, buildStreamDebug } from '../lib/traceForms'
 import { createFormMaterial, setAccumulation } from '../lib/formMaterial'
 import { buildBranchingGeometry, growBranching } from '../lib/branching'
 import BranchNetwork from './BranchNetwork'
 import LifecycleLayer from './LifecycleLayer'
+import { Tendrils, TENDRIL_SOFT } from '../lib/tendrils'
 
 /** Seconds a full Grow takes. Everything moves; nothing moves fast. */
 const GROW_SECONDS = 42
@@ -92,8 +93,31 @@ export default function ScatterLayers({
   // The Habitat's D1: the lifecycles' passage drawn to be read from eye
   // height (LifecycleLayer `legible`).
   legible = false,
+  // The Habitat's M3: the residue and old contours drawn by their age.
+  ageLook = false,
+  // The Habitat's M3R: the lifecycle residents drawn for close range (LifecycleLayer `closeRange`).
+  closeRange = false,
+  // The Habitat's M3E: the resident encounter (lib/encounter.js), and films drawn as their residents' sheet.
+  encounter = null,
+  kinFilms = false,
+  // The Habitat's M3N: residents noticing the visitor (lib/notice.js).
+  notice = null,
+  // The Habitat's M3L: residents drawn as living membranes (LifecycleLayer LIVING).
+  living = false,
+  // The Habitat's M3C: the colony's free strands drawn and moving as tendrils (lib/tendrils.js).
+  // M3S (`'sheath'`): softer tendrils, sheathed in membrane where they leave the colony.
+  tendrils = false,
+  // The Habitat's M3S: the lifecycles' films' passage drawn to be followed (LifecycleLayer PASSAGE).
+  passage = false,
 }) {
-  const materials = useMemo(() => MESHES.map((m) => createFormMaterial({ ...m, ...formOptions })), [formOptions])
+  const sheath = tendrils === 'sheath'
+  const materials = useMemo(
+    () =>
+      MESHES.map((m) =>
+        createFormMaterial({ ...m, ...formOptions, ...(tendrils && m.layer === 'bridgework' && (m.part === 'solid' || (sheath && m.part === 'film')) ? { tendril: true } : null) }),
+      ),
+    [formOptions, tendrils, sheath],
+  )
   const residentMeshes = useMemo(() => (formOptions ? RESIDENT_MESHES.map((m) => ({ ...m, ...formOptions })) : RESIDENT_MESHES), [formOptions])
 
   // Study 10 (?lifecycle=1 only): the lifecycle's residents leave the
@@ -106,7 +130,20 @@ export default function ScatterLayers({
     const shard = kept.layers.shard
     return { ...kept, layers: { ...kept.layers, shard: { ...shard, instances: [...shard.instances, ...residue] } } }
   }, [scatter, lives, withhold, residue])
-  const geometry = useMemo(() => buildScatterGeometry(placed, world), [placed, world])
+  const geometry = useMemo(() => buildScatterGeometry(placed, world, { tendrils }), [placed, world, tendrils])
+  // M3C: the tendrils as built, and what they do as a stranger comes near.
+  const tendrilDriver = useMemo(() => (tendrils ? new Tendrils(geometry.bridgework?.solid?.userData.tendrils, sheath ? TENDRIL_SOFT : undefined) : null), [tendrils, sheath, geometry])
+  const structureIndex = MESHES.findIndex((m) => m.layer === 'bridgework' && m.part === 'solid')
+  const sheathIndex = MESHES.findIndex((m) => m.layer === 'bridgework' && m.part === 'film')
+  const camera = useThree((s) => s.camera)
+  useEffect(() => {
+    if (!tendrilDriver) return undefined
+    // For scripted checks, like the Habitat's own diagnostics (`window.__habitat`).
+    window.__tendrils = tendrilDriver
+    return () => {
+      if (window.__tendrils === tendrilDriver) delete window.__tendrils
+    }
+  }, [tendrilDriver])
   // The branching network grows from what the colony placed (and from the
   // membrane surfaces the geometry just built). Structure, so Bridgework's
   // Amount sets how much grows; Accumulation how far it runs down the
@@ -194,6 +231,11 @@ export default function ScatterLayers({
       if (u.uOpenness) u.uOpenness.value = m.layer === 'bloom' ? params.bloomOpenness * 1.6 : m.layer === 'bridgework' ? 0.8 : 0
       setAccumulation(u, accumulation)
     })
+    if (tendrilDriver) {
+      tendrilDriver.update(camera.position.toArray(), Math.min(delta, 0.1))
+      tendrilDriver.write(materials[structureIndex].uniforms)
+      if (sheath) tendrilDriver.write(materials[sheathIndex].uniforms)
+    }
   })
 
   return (
@@ -215,6 +257,13 @@ export default function ScatterLayers({
           cull={cullLives}
           legible={legible}
           light={formOptions?.light ?? null}
+          age={ageLook}
+          closeRange={closeRange}
+          encounter={encounter}
+          kinFilms={kinFilms}
+          notice={notice}
+          living={living}
+          passage={passage}
         />
       ))}
       {MESHES.map((m, k) => {

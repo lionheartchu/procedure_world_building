@@ -23,6 +23,10 @@ import { AIR_CONTROLS, GROWTH, HISTORY, LAYER_CONTROLS, SEED, STREAM_CONTROLS } 
  * One control is Explore's own: Underwater visibility, under World's Water
  * appearance. Presentation only (App passes it to the ground and water
  * shaders in Explore and nowhere else); at 0 the water is as it was.
+ *
+ * The panel folds away to its title (`collapsed`, from App; its button or
+ * P), leaving the world the whole view. Folded, its controls stay in the
+ * page, so the sections left open and every value are as they were.
  */
 
 const pick = (list, key, extra = {}) => ({ ...list.find((d) => d.key === key), ...extra })
@@ -110,6 +114,8 @@ export default function ExplorePanel({
   streams,
   growing,
   onGrow,
+  collapsed = false,
+  onToggle,
 }) {
   const on = (group) => (key, value) => onChange(group, key, value)
   const sliders = (group, values, list) =>
@@ -125,11 +131,23 @@ export default function ExplorePanel({
 
   return (
     <aside
-      className="side-panel explore-panel"
+      className={`side-panel explore-panel${collapsed ? ' is-collapsed' : ''}`}
       aria-label="Explore"
       onPointerDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >
+      <button
+        type="button"
+        className="explore-fold"
+        aria-expanded={!collapsed}
+        aria-controls="explore-controls"
+        title={collapsed ? 'Show the parameters (P)' : 'Hide the parameters (P)'}
+        onClick={onToggle}
+      >
+        <span>Parameters</span>
+        <span className="explore-fold-mark" aria-hidden="true" />
+      </button>
+      <div id="explore-controls" hidden={collapsed}>
       <section className="panel-section">
         <Title
           kind="regenerates"
@@ -207,6 +225,7 @@ export default function ExplorePanel({
       <p className="panel-hint">
         {regenerating ? 'Regenerating the world…' : 'Drag to orbit · scroll to zoom'}
       </p>
+      </div>
     </aside>
   )
 }

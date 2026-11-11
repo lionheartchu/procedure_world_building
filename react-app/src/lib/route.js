@@ -31,7 +31,7 @@ export function usePath() {
   )
 }
 
-/** Whether a path is the Habitat: `/habitat` (the featured one, FEATURED in lib/habitat.js), and each space at `/habitat/<key>` (v0, a … m2). */
+/** Whether a path is the Habitat: `/habitat` (the featured one, FEATURED in lib/habitat.js), and each space at `/habitat/<key>` (v0, a … m3s). */
 export const isHabitat = (path) => path === '/habitat' || path.startsWith('/habitat/')
 
 /** The Habitat's own route, where the site's navigation leads: it opens the featured space. */

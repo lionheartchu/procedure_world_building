@@ -127,6 +127,30 @@ const VERTEX = /* glsl */ `
   // down (so the marks lie with it).
   varying vec3 vRest;
   #endif
+  #ifdef PASSAGE
+  // M3S: the marks again (as the film stage has them), and the seconds
+  // since each film came away: where one tears free the sheet springs back
+  // a little and settles, as tension let go would.
+  uniform vec4 uLeft[4];
+  uniform vec2 uAcross;
+  uniform vec4 uLeftSince;
+  #endif
+  #ifdef POSTURE
+  // The Habitat's M3R (lifecycle residents): its posture as one bend from
+  // its foot toward its lean, which keeps the sheet's length (the shear it
+  // replaces shortened a sheet by a third halfway down). The bend at the
+  // foot (radians) and how far up it builds (a share of the height: wide,
+  // the whole sheet sags; narrow, it hinges at its foot and lies flat), the
+  // crest's own fold (radians), and the sheet's height now. uTilt: the
+  // ground under it (its slope along x and z, and its height at the foot
+  // against uBase), so what lies down lies on that ground.
+  uniform vec4 uPosture;
+  uniform vec3 uTilt;
+  float postureAngle(float u) {
+    float H = max(uPosture.w, 0.05);
+    return uPosture.x * (1.0 - exp(-u / max(uPosture.y * H, 1e-3))) + uPosture.z * smoothstep(0.25 * H, H, u);
+  }
+  #endif
   #ifdef ENCOUNTER
   // The Habitat's encounter (lib/encounter.js): one membrane's dent. Its
   // displacement at the centre, the centre and radius, and the foot it is
@@ -137,6 +161,48 @@ const VERTEX = /* glsl */ `
   uniform vec4 uDentFoot;
   // How stretched the sheet is here (0..1): pressed in, it thins.
   varying float vStretch;
+  #endif
+  #ifdef NOTICE
+  // The Habitat's M3N (lib/notice.js): a resident noticing the visitor
+  // closes, cupping its sheet away from them about its spine (curvature,
+  // signed toward its lean; and the sheet's height, held at its foot).
+  uniform vec4 uNoticeCup;
+  #endif
+  #ifdef LIVING
+  // The Habitat's M3L (docs/25-living-membrane.md): the membrane as living
+  // tissue. Its folds: flutes across it and a ruffle at its rim (how many
+  // across, each; how deep, each, in units). How it is gathered now (-0.3
+  // opened past rest .. 1), how far it draws down (a share of its length up
+  // the sheet; it draws in across a third as much), from which side (-1..1
+  // across it), and where across it its crest stands (uv.x), which it
+  // closes around. Its half width, its height now, how far its lobes stand
+  // above its bays, and its own phase. (The rim's ruffle drifts with uTime.)
+  uniform vec4 uLivingShape;
+  uniform vec4 uLivingMove;
+  uniform vec4 uLivingSize;
+  // M3C's refinement (M3L: 0, 0, -0.85, 1, and a twist of 0.7): how far it
+  // cups as it gathers and toward which side (-1..1), how its lobes change
+  // as it gathers, how round their tops are; how far its folds turn.
+  uniform vec4 uLivingForm;
+  uniform float uLivingTwist;
+  #endif
+  #ifdef TENDRIL
+  // The Habitat's M3C (lib/tendrils.js): the colony's tendrils. Per vertex,
+  // which one, how far out along it (0 its root .. 1 its tip), its seed and
+  // its part (0 stalk, 1 bulb, 2 branchlet; M3S: 0.5..1 a bulb's neck, 3 a
+  // sheath of membrane, on the films, moving as its stalk does). For the few nearest the
+  // visitor: which (x), how still it holds (y) and how far it reaches (z,
+  // along its tip, uTendrilC); where its tip leans (uTendrilB) and how far
+  // its bulb lags (uTendrilD).
+  attribute vec4 aStrand;
+  uniform vec4 uTendrilA[8];
+  uniform vec4 uTendrilB[8];
+  uniform vec4 uTendrilC[8];
+  uniform vec4 uTendrilD[8];
+  #endif
+  #ifdef LIVING_TIP
+  // M3L: the bead at a crest goes where the crest's rim goes.
+  uniform vec3 uLivingTip;
   #endif
 
   varying vec3 vWorld;
@@ -176,6 +242,92 @@ const VERTEX = /* glsl */ `
     #ifdef RELEASE
     vRest = p;
     #endif
+    #ifdef PASSAGE
+    for (int k = 0; k < 4; k++) {
+      vec4 L = uLeft[k];
+      float s = uLeftSince[k];
+      if (L.z <= 0.0 || s < 0.0 || s > 4.0) continue;
+      vec2 d = vec2(dot(p.xz - uBase.xz, uAcross) - L.x, p.y - uBase.y - L.y) / L.z;
+      float recoil = sin(6.2832 * 1.3 * s) * exp(-s / 0.7) * smoothstep(0.0, 0.06, s);
+      p += nrm * 0.28 * L.z * exp(-dot(d, d) * 0.7) * recoil;
+    }
+    #endif
+    #ifdef LIVING
+    {
+      // In the sheet's own frame: across it, up it, out of it. As built,
+      // before its posture bends it (LifecycleLayer livingAt is the same,
+      // for the encounter).
+      vec3 acrossV = vec3(-uLean.y, 0.0, uLean.x);
+      vec3 tU = normalize(acrossV - nrm * dot(acrossV, nrm) + vec3(1e-5));
+      // Up the sheet along its own columns (its normal is across × up as
+      // built), so a crest curling over runs on down its lip.
+      vec3 tV = normalize(cross(nrm, tU));
+      float s = sqrt(max(aSway, 0.0));
+      float halfW = max(uLivingSize.x, 0.05);
+      float u = clamp(uv.x / halfW, -1.0, 1.0);
+      // Gathered: the rim and the side the visitor is on first, the foot and
+      // the far side last; opening past rest, all of it at once.
+      float lag = 0.35 * (1.0 - s) + 0.45 * (0.5 - 0.5 * u * uLivingMove.z);
+      float G = uLivingMove.x;
+      float gc = G >= 0.0 ? smoothstep(0.0, 1.0, (G * 1.8 - lag) / 0.8) : G;
+      // Flutes unevenly spaced and turning a little up the sheet, as grown
+      // tissue is, not pleated.
+      float th1 = 6.2832 * uLivingShape.x * (0.5 + 0.5 * u) + uLivingSize.w + 0.9 * sin(3.1 * u + 1.3 * uLivingSize.w) + uLivingTwist * s;
+      float th2 = 6.2832 * uLivingShape.y * (0.5 + 0.5 * u) + 1.7 * uLivingSize.w + 0.12 * uTime;
+      // It draws down and a little in; the length it loses buckles into
+      // deeper flutes, and its rim crumples.
+      float a1 = uLivingShape.z * pow(s, 1.2) * (1.0 + 0.9 * gc);
+      float a2 = uLivingShape.w * s * s * s * (1.0 + 1.6 * gc);
+      float D = a1 * sin(th1) + a2 * sin(th2);
+      float lobe = uLivingSize.z * s * s * s * pow(0.5 + 0.5 * cos(th1), uLivingForm.w) * (1.0 + uLivingForm.z * max(gc, 0.0));
+      // (M3C: it cups, the sides coming forward away from the visitor, a shell.)
+      float cup = uLivingForm.x * max(gc, 0.0) * uLivingForm.y * (u * u - 0.33) * s * halfW;
+      p += nrm * (D + cup) + tV * (lobe - uLivingMove.y * gc * uv.y) - tU * (0.35 * uLivingMove.y * gc * (uv.x - uLivingMove.w));
+      float dDdu = (a1 * cos(th1) * (3.1416 * uLivingShape.x + 2.79 * cos(3.1 * u + 1.3 * uLivingSize.w)) + a2 * cos(th2) * 3.1416 * uLivingShape.y) / halfW;
+      float dDdv = (1.2 * a1 * sin(th1) + 3.0 * a2 * sin(th2)) / max(s, 0.05) / max(uLivingSize.y, 0.05);
+      nrm = normalize(nrm - tU * dDdu - tV * dDdv);
+    }
+    #endif
+    #ifdef LIVING_TIP
+    p += uLivingTip;
+    #endif
+    #ifdef POSTURE
+    if (uPosture.x != 0.0 || uPosture.z != 0.0) {
+      // The sheet as it stands, in its own frame: along its lean (a), across
+      // it (c), and its height above the foot (h). Each point goes to where
+      // the bent spine is at its height, its offset from the spine turned
+      // with it; its normal turns the same way.
+      vec3 q = p - uBase;
+      vec2 across = vec2(-uLean.y, uLean.x);
+      float a = dot(q.xz, uLean);
+      float c = dot(q.xz, across);
+      float h = max(q.y, 0.0);
+      float X = 0.0;
+      float Y = 0.0;
+      float du = h / 10.0;
+      for (int k = 0; k < 10; k++) {
+        float th = postureAngle((float(k) + 0.5) * du);
+        X += sin(th) * du;
+        Y += cos(th) * du;
+      }
+      float th = postureAngle(h);
+      float ct = cos(th);
+      float st = sin(th);
+      float A = X + a * ct;
+      vec3 r = vec3(uLean.x * A + across.x * c, Y - a * st + min(q.y, 0.0), uLean.y * A + across.y * c);
+      // Never into the ground it bends over (a plane at the ground's slope
+      // there), a little above the residue skin; what stood below the ground
+      // at rest (the foot's own seam) stays as deep as it was.
+      float groundRest = uTilt.z + dot(q.xz, uTilt.xy);
+      float groundNow = uTilt.z + dot(r.xz, uTilt.xy);
+      r.y = max(r.y, groundNow + min(0.03, q.y - groundRest));
+      p = uBase + r;
+      float na = dot(nrm.xz, uLean);
+      float nc = dot(nrm.xz, across);
+      float nA = na * ct + nrm.y * st;
+      nrm = normalize(vec3(uLean.x * nA + across.x * nc, -na * st + nrm.y * ct, uLean.y * nA + across.y * nc));
+    }
+    #else
     if (uRecline > 0.0) {
       // It folds over toward its lean about its base: its height goes into
       // its length, until it lies low on the ground as its own outline.
@@ -186,19 +338,73 @@ const VERTEX = /* glsl */ `
       p = uBase + q;
       nrm = normalize(mix(normal, vec3(0.0, 1.0, 0.0), 0.8 * uRecline));
     }
+    #endif
+    #ifdef NOTICE
+    if (uNoticeCup.x != 0.0) {
+      // Each point's place across the sheet becomes an arc (LifecycleLayer
+      // poseFilm is the same, for the encounter), less at the foot.
+      vec3 q = p - uBase;
+      vec2 across = vec2(-uLean.y, uLean.x);
+      float a = dot(q.xz, uLean);
+      float c = dot(q.xz, across);
+      float kk = uNoticeCup.x * (0.35 + 0.65 * clamp(q.y / max(uNoticeCup.y, 0.05), 0.0, 1.0));
+      float th = c * kk;
+      float A = a + (1.0 - cos(th)) / kk;
+      float C = sin(th) / kk;
+      q.xz = uLean * A + across * C;
+      p = uBase + q;
+      float na = dot(nrm.xz, uLean);
+      float nc = dot(nrm.xz, across);
+      float nA = na * cos(th) + nc * sin(th);
+      float nC = -na * sin(th) + nc * cos(th);
+      nrm = normalize(vec3(uLean.x * nA + across.x * nC, nrm.y, uLean.y * nA + across.y * nC));
+    }
+    #endif
     #ifdef ENCOUNTER
     {
-      vec3 dd = position - uDentAt.xyz;
+      // Measured on the sheet as it stands now: as built (the placed veil),
+      // or as a resident's growth and posture have shaped it (M3E), which is
+      // the surface the visitor meets (lib/encounter.js).
+      vec3 q0 = p;
+      vec3 dd = q0 - uDentAt.xyz;
       float R2 = uDentAt.w * uDentAt.w;
       float local = exp(-dot(dd, dd) / R2);
-      float lean = uDentFoot.w * smoothstep(uDentFoot.x, uDentFoot.x + uDentFoot.z, position.y);
-      float wd = min(1.0, local + lean) * smoothstep(uDentFoot.x, uDentFoot.x + uDentFoot.y, position.y);
+      float lean = uDentFoot.w * smoothstep(uDentFoot.x, uDentFoot.x + uDentFoot.z, q0.y);
+      float wd = min(1.0, local + lean) * smoothstep(uDentFoot.x, uDentFoot.x + uDentFoot.y, q0.y);
       p += uDent * wd;
       vStretch = local * clamp(length(uDent) / 0.2, 0.0, 1.0);
       // The surface's normal tilts with the dent's slope, so its light follows.
-      vec3 grad = -2.0 * dd / R2 * local * smoothstep(uDentFoot.x, uDentFoot.x + uDentFoot.y, position.y);
+      vec3 grad = -2.0 * dd / R2 * local * smoothstep(uDentFoot.x, uDentFoot.x + uDentFoot.y, q0.y);
       vec3 along = grad - nrm * dot(grad, nrm);
       nrm = normalize(nrm - dot(uDent, nrm) * along);
+    }
+    #endif
+    #ifdef TENDRIL
+    if (aStrand.x >= 0.0) {
+      float u = aStrand.y;
+      float seed = aStrand.z;
+      float part = aStrand.w;
+      // Its own slow drift, and now and then a brief tremble at its tip: its
+      // own frequencies and phases, so no two move together. The root holds.
+      float f1 = 0.09 + 0.08 * fract(seed * 7.13);
+      float f2 = 0.21 + 0.11 * fract(seed * 3.71);
+      vec3 drift = vec3(sin(6.2832 * f1 * uTime + seed * 40.0), 0.35 * sin(6.2832 * f2 * uTime + seed * 17.0), cos(6.2832 * f1 * 0.83 * uTime + seed * 23.0));
+      float shiver = smoothstep(0.86, 1.0, sin(uTime * 0.21 + seed * 31.0)) * sin(uTime * 9.0 + seed * 13.0);
+      vec3 ambient = drift * 0.065 * u * u + vec3(0.0, 0.01 * shiver * smoothstep(0.6, 1.0, u), 0.0);
+      // Registering a stranger: it falls still, its outer part leans toward
+      // them, and it reaches a little along its tip; its bulb lags.
+      float still = 0.0;
+      vec3 move = vec3(0.0);
+      float wo = smoothstep(0.25, 1.0, u);
+      wo *= wo;
+      for (int k = 0; k < 8; k++) {
+        if (abs(uTendrilA[k].x - aStrand.x) < 0.5) {
+          still = uTendrilA[k].y;
+          // (Its bulb's lag eases in along an M3S bulb's neck, 0.5 .. 1.)
+          move = (uTendrilB[k].xyz + uTendrilC[k].xyz * uTendrilA[k].z) * wo + uTendrilD[k].xyz * smoothstep(0.5, 1.0, part) * step(part, 1.5);
+        }
+      }
+      p += ambient * (1.0 - 0.85 * still) + move;
     }
     #endif
     // Height above the part's foot: how far light from the ground reaches.
@@ -415,11 +621,36 @@ const FILM_FRAGMENT = /* glsl */ `
   uniform vec3 uBase;
   varying vec3 vRest;
   #endif
+  #ifdef PASSAGE
+  // The Habitat's M3S (docs/27-sheath-and-passage.md): for each film that
+  // came away, how freshly (1 as it parts .. 0 a few seconds on). Where the
+  // sheet has just thinned, round the edge of the mark, it shows a thin
+  // film's colours, as a soap film does as it thins: only there, only then.
+  uniform vec4 uLeftFresh;
+  uniform vec3 uOpalA;
+  uniform vec3 uOpalB;
+  uniform vec3 uOpalC;
+  #endif
   #ifdef NEAR_FADE
   // The Habitat (first person): the back-lit rim light and the fold light
   // fade near the camera (from x to y units), where a curving sheet would
   // flare white and show its facets (docs/11-presence-study.md).
   uniform vec2 uNearFade;
+  #endif
+  #ifdef NEAR_ALPHA
+  // The Habitat's M3R: a sheet close to the eye thins (to z of its opacity
+  // nearer than x units, fully itself beyond y), so passing by a membrane
+  // shows it as a film in front of the world, not a pale wall over it.
+  uniform vec3 uNearAlpha;
+  #endif
+  #ifdef NOTICE
+  // The Habitat's M3N (lib/notice.js): a resident noticing the visitor
+  // frosts, from the side they come from. The side (xz, unit, toward the
+  // visitor), how dense, how far across the sheet it has spread (0..);
+  // its foot and height; and its colour.
+  uniform vec4 uNotice;
+  uniform vec4 uNoticeAt;
+  uniform vec3 uNoticeTint;
   #endif
 
   #include <common>
@@ -460,11 +691,20 @@ const FILM_FRAGMENT = /* glsl */ `
     float r = mix(0.12, 0.42, lace) * (0.55 + 0.45 * fract(w.y * 7.31)) * opens * margin;
     #ifdef RELEASE
     float gone = 0.0;
+    #ifdef PASSAGE
+    float thinning = 0.0;
+    #endif
     for (int k = 0; k < 4; k++) {
       vec4 L = uLeft[k];
       if (L.w <= 0.0) continue;
       vec2 d = vec2(dot(vRest.xz - uBase.xz, uAcross) - L.x, vRest.y - uBase.y - L.y) / L.z;
-      gone = max(gone, L.w * exp(-dot(d, d)));
+      float gk = exp(-dot(d, d));
+      gone = max(gone, L.w * gk);
+      #ifdef PASSAGE
+      // A ring a little wider than the mark, where the sheet is thinning.
+      float e = exp(-dot(d, d) * 0.5);
+      thinning = max(thinning, uLeftFresh[k] * e * (1.0 - 0.7 * gk));
+      #endif
     }
     // Where it left, the sheet opens into fine lace (small, many, uneven:
     // never one hole, which reads as an eye), most at the mark's middle.
@@ -566,6 +806,21 @@ const FILM_FRAGMENT = /* glsl */ `
     // Thinner where its films have come away.
     alpha *= 1.0 - 0.55 * gone;
     #endif
+    #ifdef PASSAGE
+    // The thin film's colours: pearl through rose-lilac to a pale aqua, by
+    // how thin it is there and the angle it is seen at; at the sheet's own
+    // brightness, a share of it, never a rainbow.
+    {
+      float ph = fract(1.4 * thinning + 0.9 * (1.0 - facing) + 0.35 * vUv.y);
+      vec3 opal = ph < 0.5 ? mix(uOpalA, uOpalB, smoothstep(0.0, 0.5, ph)) : mix(uOpalB, uOpalC, smoothstep(0.5, 1.0, ph));
+      float lum = dot(lit + emit, vec3(0.3, 0.5, 0.2));
+      vec3 hue = opal * (lum / max(dot(opal, vec3(0.3, 0.5, 0.2)), 1e-3));
+      float k = smoothstep(0.08, 0.45, thinning) * presence;
+      lit = mix(lit, hue, 0.75 * k);
+      emit = mix(emit, hue * 0.35, 0.4 * k) + opal * 0.07 * k;
+      alpha += 0.08 * k;
+    }
+    #endif
     #ifdef WARM
     alpha += gb * uGrow.w;
     #endif
@@ -589,6 +844,31 @@ const FILM_FRAGMENT = /* glsl */ `
       emit = mix(emit, hue * 0.2, k * 0.6);
     }
     #endif
+    #ifdef NOTICE
+    // Frost: the film clouds to a milky pearl, from the side the visitor is
+    // on across the sheet, as far as uNotice.w has spread (its front broken
+    // unevenly, lower down first); in fine flecks that thicken and close up
+    // as it deepens, so the sheet's glass turns to hoarfrost.
+    if (uNotice.z > 0.0) {
+      vec2 off = vWorld.xz - uNoticeAt.xz;
+      float facing = dot(off, uNotice.xy) / (length(off) + 0.12);
+      float up = clamp((vWorld.y - uNoticeAt.y) / max(uNoticeAt.w, 0.05), 0.0, 1.0);
+      vec2 fg = worley(vec2(vUv.x, vUv.y * 0.62) * 11.0);
+      float across = 0.5 - 0.5 * facing + 0.25 * up + 0.22 * (fg.x - 0.35);
+      float cover = 1.0 - smoothstep(uNotice.w - 0.18, uNotice.w + 0.06, across);
+      float wf = uNotice.z * cover * presence;
+      // The grain at two scales, so it never reads as a pattern of dots;
+      // evened out where it would be finer than a pixel (it would shimmer).
+      vec2 sc = vec2(vUv.x, vUv.y * 0.62) * 80.0;
+      float d = min(worley(sc).x, 1.2 * worley(sc * 0.62 + 7.1).x);
+      float fleck = 1.0 - smoothstep(0.12 + 0.2 * wf, 0.34 + 0.2 * wf, d);
+      fleck = mix(0.5, fleck, 1.0 - smoothstep(0.3, 0.8, length(fwidth(sc))));
+      float milk = wf * (0.75 + 0.25 * fleck);
+      lit = mix(lit, uNoticeTint, milk * 0.6);
+      emit += uNoticeTint * 0.05 * fleck * wf;
+      alpha = mix(alpha, 0.8, milk * 0.7);
+    }
+    #endif
 
     float under = smoothstep(0.0, 0.25, uWaterY - vWorld.y);
     lit *= 1.0 - under * 0.45;
@@ -599,12 +879,16 @@ const FILM_FRAGMENT = /* glsl */ `
     // light in them builds up, as in layered tissue. (Premultiplied: the
     // material blends ONE, ONE_MINUS_SRC_ALPHA.)
     vec3 layered = emit * 0.2 + held;
+    float nearA = 1.0;
+    #ifdef NEAR_ALPHA
+    nearA = mix(uNearAlpha.z, 1.0, smoothstep(uNearAlpha.x, uNearAlpha.y, length(cameraPosition - vWorld)));
+    #endif
     // (uFade over 1, a D1 resident fuller than a placed veil, is capped short of opaque.)
-    gl_FragColor = vec4(lit + emit * 0.8, min(clamp(alpha, 0.0, 0.92) * uFade, 0.95));
+    gl_FragColor = vec4(lit + emit * 0.8, min(clamp(alpha, 0.0, 0.92) * uFade, 0.95) * nearA);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
     #include <fog_fragment>
-    vec3 add = layered * smoothstep(0.0, 0.15, alpha) * uFade;
+    vec3 add = layered * smoothstep(0.0, 0.15, alpha) * uFade * nearA;
     #ifdef TONE_MAPPING
       add = toneMapping(add);
     #endif
@@ -637,9 +921,9 @@ const FILM_FRAGMENT = /* glsl */ `
  *   halo      additive light on the terrain (now only the debug splines:
  *             the colony's light comes from accumulation.js instead)
  */
-export function createFormMaterial({ kind, tint = PALETTE.paleLavender, gain = 1, edgeGlow = 0.12, specular, body = 1, flow = 0, nearFade = null, encounter = false, filmGain = 1, spots = 1, light = null, wind = false, release = false, stain = false }) {
+export function createFormMaterial({ kind, tint = PALETTE.paleLavender, gain = 1, edgeGlow = 0.12, specular, body = 1, flow = 0, nearFade = null, encounter = false, filmGain = 1, spots = 1, light = null, wind = false, release = false, stain = false, age = false, posture = false, nearAlpha = null, live = null, notice = null, living = false, tendril = false, passage = false }) {
   if (kind === 'halo') return createHaloMaterial(tint)
-  if (kind === 'tissue') return withLight(createTissueMaterial(tint), light?.tissue)
+  if (kind === 'tissue') return withLight(createTissueMaterial(tint, { age }), light?.tissue)
   const film = kind === 'film'
   // The Habitat's options (off everywhere else, and then not compiled):
   // `nearFade` [from, to] units, films only; `encounter`, the dent.
@@ -663,12 +947,65 @@ export function createFormMaterial({ kind, tint = PALETTE.paleLavender, gain = 1
     defines.RELEASE = ''
     extra.uLeft = { value: Array.from({ length: 4 }, () => new THREE.Vector4()) }
     extra.uAcross = { value: new THREE.Vector2(1, 0) }
+    // The Habitat's M3S: `passage`, a fresh mark's thin-film colours.
+    if (passage) {
+      defines.PASSAGE = ''
+      extra.uLeftFresh = { value: new THREE.Vector4() }
+      extra.uLeftSince = { value: new THREE.Vector4(-1, -1, -1, -1) }
+      extra.uOpalA = hexUniform('#F3EEF2')
+      extra.uOpalB = hexUniform('#E6B4E2')
+      extra.uOpalC = hexUniform('#A9DDE6')
+    }
+  }
+  // The Habitat's M3R: `posture` (a lifecycle resident's bend from its foot,
+  // replacing the recline's shear) and `nearAlpha` [from, to, least], films
+  // only (a sheet near the eye thins).
+  if (posture) {
+    defines.POSTURE = ''
+    extra.uPosture = { value: new THREE.Vector4(0, 0.5, 0, 1) }
+    extra.uTilt = { value: new THREE.Vector3() }
+  }
+  if (nearAlpha && film) {
+    defines.NEAR_ALPHA = ''
+    extra.uNearAlpha = { value: new THREE.Vector3(...nearAlpha) }
   }
   if (encounter) {
     defines.ENCOUNTER = ''
     extra.uDent = { value: new THREE.Vector3() }
     extra.uDentAt = { value: new THREE.Vector4(0, 0, 0, 0.2) }
     extra.uDentFoot = { value: new THREE.Vector4(0, 0.1, 1, 0) }
+  }
+  // The Habitat's M3N: `notice`, the frost's colour (a resident noticing
+  // the visitor, lib/notice.js), films only.
+  if (notice && film) {
+    defines.NOTICE = ''
+    extra.uNotice = { value: new THREE.Vector4() }
+    extra.uNoticeAt = { value: new THREE.Vector4(0, 0, 0, 1) }
+    extra.uNoticeCup = { value: new THREE.Vector4(0, 1, 0, 0) }
+    extra.uNoticeTint = hexUniform(notice)
+  }
+  // The Habitat's M3L: `living`, the membrane's folds and gathering (films),
+  // and its bead following the rim (the solid parts).
+  if (living && film) {
+    defines.LIVING = ''
+    extra.uLivingShape = { value: new THREE.Vector4() }
+    extra.uLivingMove = { value: new THREE.Vector4() }
+    extra.uLivingSize = { value: new THREE.Vector4(0.3, 1, 0, 0) }
+    extra.uLivingForm = { value: new THREE.Vector4(0, 0, -0.85, 1) }
+    extra.uLivingTwist = { value: 0.7 }
+  } else if (living) {
+    defines.LIVING_TIP = ''
+    extra.uLivingTip = { value: new THREE.Vector3() }
+  }
+  // The Habitat's M3C: `tendril`, the colony's tendrils moving (lib/tendrils.js), on its structure
+  // (M3S: on its films too, which sheathe them).
+  if (tendril) {
+    defines.TENDRIL = ''
+    const slots = (w = 0) => ({ value: Array.from({ length: 8 }, () => new THREE.Vector4(-1, 0, 0, w)) })
+    extra.uTendrilA = slots()
+    extra.uTendrilB = slots()
+    extra.uTendrilC = slots()
+    extra.uTendrilD = slots()
   }
   const material = new THREE.ShaderMaterial({
     defines,
@@ -710,7 +1047,9 @@ export function createFormMaterial({ kind, tint = PALETTE.paleLavender, gain = 1
         uPale: hexUniform(PALETTE.paleLavender),
         uBright: hexUniform('#E2DEF6'),
         uRim: hexUniform('#A9B0E8'),
-        uMint: hexUniform(PALETTE.moonlitMint),
+        // The light of a live site (vLook.y, History's flow there): mint, or
+        // (M3E's `live`) the membranes' own pale tone.
+        uMint: hexUniform(live ?? PALETTE.moonlitMint),
         ...accumulationUniforms(),
         ...extra,
       },
@@ -859,6 +1198,12 @@ const TISSUE_VERTEX = /* glsl */ `
   attribute vec2 aWarm;
   varying vec2 vWarm;
   #endif
+  #ifdef AGE
+  // The Habitat's M3: how long the matter here has lain (0 just arrived,
+  // 1 several minutes), from the lifecycle's own record of arrivals.
+  attribute float aAge;
+  varying float vAge;
+  #endif
 
   #include <common>
   #include <fog_pars_vertex>
@@ -866,6 +1211,9 @@ const TISSUE_VERTEX = /* glsl */ `
   void main() {
     vGrow = smoothstep(aBirth.x, aBirth.x + aBirth.y, uGrowth);
     vLook = aLook;
+    #ifdef AGE
+    vAge = aAge;
+    #endif
     #ifdef WARM
     vWarm = aWarm;
     #endif
@@ -896,6 +1244,9 @@ const TISSUE_FRAGMENT = /* glsl */ `
   varying vec3 vWorld;
   varying vec3 vNormal;
   varying vec2 vUv;
+  #ifdef AGE
+  varying float vAge;
+  #endif
 
   #include <common>
   #include <fog_pars_fragment>
@@ -949,8 +1300,22 @@ const TISSUE_FRAGMENT = /* glsl */ `
     float grain = valueNoise(vUv * 38.0) * 0.6 + valueNoise(vUv * 95.0) * 0.4;
     float specks = step(0.82, valueNoise(vUv * 140.0));
     float crusted = smoothstep(0.02, 0.7, crust);
+    #ifdef AGE
+    // M3: its age, read from how it lies. Just arrived (the lifecycle's rest:
+    // still settling, nothing may rise from it yet) it is fine and smooth,
+    // a little paler; once it has lain a while it is the granular deposit;
+    // long lain, it is coarser and sinks toward the ground's own tone.
+    float settling = 1.0 - smoothstep(0.04, 0.12, vAge);
+    float aged = smoothstep(0.3, 1.0, vAge);
+    crusted *= mix(1.0, 0.15, settling);
+    crusted = mix(crusted, min(1.0, crusted * 1.4 + 0.15 * presence), aged);
+    col = mix(col, uBright * 0.95, 0.35 * settling * presence);
+    #endif
     col = mix(col, uSediment * (0.55 + 0.7 * grain) + uBright * specks * 0.25, crusted);
     vec3 lit = col * (ambient * 0.9 + uLightColor * wrap * 0.75);
+    #ifdef AGE
+    lit *= mix(1.0, 0.8, aged);
+    #endif
 
     // The light held in what the colony gathered (accumulation.js): the
     // skin takes its tone, and the thicker and denser it is, the more light
@@ -1006,8 +1371,10 @@ const TISSUE_FRAGMENT = /* glsl */ `
   }
 `
 
-function createTissueMaterial(tint) {
+function createTissueMaterial(tint, { age = false } = {}) {
   return new THREE.ShaderMaterial({
+    // `age` (the Habitat's M3, the lifecycle's residue): drawn by how long it has lain.
+    defines: age ? { AGE: '' } : {},
     fog: true,
     transparent: true,
     depthWrite: false,

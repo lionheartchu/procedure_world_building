@@ -95,10 +95,10 @@ export function Figure({ id, className = '', eager = false, caption = true }) {
  * The global navigation, as on every Atlas page: quiet until it is wanted
  * (QuietNav). `right` stays shown: a light way back.
  */
-export function AtlasHeader({ tone = 'light', right }) {
+export function AtlasHeader({ tone = 'light', right, always = false }) {
   return (
     <header className={`atlas-top tone-${tone}`}>
-      <QuietNav label="Residual Ecology: menu">
+      <QuietNav label="Residual Ecology: menu" always={always}>
         <Link to="/atlas" className="atlas-brand">
           Residual Ecology
         </Link>
