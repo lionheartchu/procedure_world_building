@@ -46,6 +46,8 @@ const norm = (a) => {
   return [a[0] / l, a[1] / l, a[2] / l]
 }
 const UP = [0, 1, 0]
+/** Not part of a tendril (FormWriter `strand`: id, how far out, seed, part). */
+const NO_STRAND = [-1, 0, 0, 0]
 
 /* --- writer -------------------------------------------------------------- */
 
@@ -64,6 +66,11 @@ export class FormWriter {
     this.look = []
     this.edge = []
     this.sway = []
+    // M3C (docs/26-colony-motion.md): which tendril a vertex belongs to, how
+    // far out along it, its seed and what part it is. Written only once a
+    // strand is tagged; every other build is as before.
+    this.strand = []
+    this.strandUsed = false
     this.index = []
     this.count = 0
     this.state = {
@@ -75,11 +82,13 @@ export class FormWriter {
       alpha: 1,
       open: 0,
       sway: 0,
+      strand: NO_STRAND,
     }
   }
 
   set(changes) {
     Object.assign(this.state, changes)
+    if (changes.strand && changes.strand[0] >= 0) this.strandUsed = true
     return this
   }
 
@@ -93,6 +102,7 @@ export class FormWriter {
     this.look.push(s.tone, s.glow, s.alpha, s.open)
     this.edge.push(edge)
     this.sway.push(sway)
+    this.strand.push(s.strand[0], s.strand[1], s.strand[2], s.strand[3])
     return this.count++
   }
 
@@ -111,6 +121,7 @@ export class FormWriter {
     geo.setAttribute('aLook', new THREE.Float32BufferAttribute(this.look, 4))
     geo.setAttribute('aEdge', new THREE.Float32BufferAttribute(this.edge, 1))
     geo.setAttribute('aSway', new THREE.Float32BufferAttribute(this.sway, 1))
+    if (this.strandUsed) geo.setAttribute('aStrand', new THREE.Float32BufferAttribute(this.strand, 4))
     geo.setIndex(this.index)
     geo.computeBoundingSphere()
     geo.computeBoundingBox()
@@ -130,7 +141,7 @@ export class FormWriter {
  * `ring(t)` may return state changes per ring — that is how a span gets a
  * birth time per ring, anchored on its own centre line.
  */
-function tube(w, curve, radius, { segments, radial = 10, side, ring, sway }) {
+function tube(w, curve, radius, { segments, radial = 10, side, ring, sway, slope = false }) {
   const e = 0.5 / segments
   let arc = 0
   let prev = curve(0)
@@ -147,6 +158,13 @@ function tube(w, curve, radius, { segments, radial = 10, side, ring, sway }) {
     N = norm(N)
     const S = norm(cross(T, N))
     const r = Math.max(0, radius(t))
+    // (`slope`, M3S's bulbs: the normal tilted by how fast the radius
+    // changes along the tube, so a swelling or a rounded end is lit as one.)
+    let tilt = 0
+    if (slope) {
+      const l = Math.hypot(...sub(curve(Math.min(1, t + e)), curve(Math.max(0, t - e))))
+      tilt = l > 1e-6 ? (radius(Math.max(0, t - e)) - radius(Math.min(1, t + e))) / l : 0
+    }
 
     if (ring) w.set({ anchor: c, ...ring(t) })
     const circumference = Math.PI * 2 * r
@@ -155,7 +173,7 @@ function tube(w, curve, radius, { segments, radial = 10, side, ring, sway }) {
       const a = (j / radial) * Math.PI * 2
       const n = add(scale(S, Math.cos(a)), scale(N, Math.sin(a)))
       const p = add(c, scale(n, r))
-      row.push(w.vertex(p, n, arc, (j / radial) * circumference, 1, sway ? sway(t) : undefined))
+      row.push(w.vertex(p, slope ? norm(add(n, scale(T, tilt))) : n, arc, (j / radial) * circumference, 1, sway ? sway(t) : undefined))
     }
     rows.push(row)
   }
@@ -265,7 +283,7 @@ const groundAt = (world, x, z) => world.groundY(...world.toUV(x, z))
  * The first version was a thick deck with a second tier joined by struts: a
  * footbridge that dominated every frame.
  */
-function buildBridgework(instances, world, { solid, film }) {
+function buildBridgework(instances, world, { solid, film }, { registry = null, sheath = false } = {}) {
   for (const inst of instances) {
     const random = mulberry32(inst.seed)
     const A = inst.a
@@ -307,25 +325,70 @@ function buildBridgework(instances, world, { solid, film }) {
 
       const at = (t) => add(base(t), [0, h * shape(t) - 0.04 * (1 - Math.sin(Math.PI * t)), 0])
       // A strand that does not land is drawn only up to `end`, thinning to a tip.
-      const curve = (u) => at(u * end)
+      let curve = (u) => at(u * end)
       const r = k === 0 ? rMid : rMid * (0.5 + 0.2 * random())
-      const radius = (u) => {
+      let radius = (u) => {
         const t = u * end
         const swell = 1 + 0.14 * Math.sin(t * 9 + wave)
         return lands
           ? r * (1 + 1.9 * Math.pow(1 - t, 5) + 0.9 * Math.pow(t, 5)) * swell
           : r * (1 + 1.9 * Math.pow(1 - t, 5)) * (1 - 0.85 * Math.pow(u, 3)) * swell
       }
-      strands.push({ curve, radius })
+      // M3C: a strand that ends in the air is a tendril (one that lands is
+      // structure, and holds its film still).
+      const tendril = registry && !lands ? tendrilise(curve, radius, { len: inst.len * end, side, seed: inst.seed + k * 7919, soft: sheath }) : null
+      if (tendril) {
+        curve = tendril.curve
+        radius = tendril.radius
+      }
+      strands.push({ curve, radius, tendril })
+      const tag = tendril ? enlist(registry, tendril, { kind: 'reach', colony: inst.colony }) : null
 
       // The lead strand grows from the anchor's side; on a crossing the
       // others answer from the far footing, so it closes from both ends.
       tube(solid, curve, radius, {
-        segments: Math.max(24, Math.round(inst.len * end * 9)),
+        segments: Math.round(Math.max(24, Math.round(inst.len * end * 9)) * (tendril ? 2.5 : 1)),
         radial: 8,
         side,
-        ring: (u) => ({ birth: k === 0 || !span ? birth + 0.02 + u * 0.22 + k * 0.03 : birth + 0.08 + (1 - u) * 0.2, span: 0.06 }),
+        ring: (u) => ({
+          birth: k === 0 || !span ? birth + 0.02 + u * 0.22 + k * 0.03 : birth + 0.08 + (1 - u) * 0.2,
+          span: 0.06,
+          ...(tag ? { strand: [tag.id, u, tag.seed, TENDRIL_PART.stalk] } : null),
+        }),
       })
+      if (tendril) {
+        for (const u0 of tendril.branches) branchlet(solid, curve, radius, u0, { len: inst.len * end, side, tag, birth: birth + 0.24 })
+        solid.set({ strand: NO_STRAND })
+        if (sheath) {
+          // M3S: the lead's root a flared ribbon of membrane, lying low and
+          // turning up into the stalk; the other ends in its own small bulb.
+          const rng = mulberry32(((tendril.seed * 1e6) ^ 0x2c1b3c6d) >>> 0)
+          if (k === 0) {
+            // A fin of membrane between the rising stalk and the ground it
+            // grows from, leaning a little to one side: as tall as the stalk
+            // stands there (it meets the ground along its free edge), and
+            // narrowing up into the stalk.
+            const wide = (0.14 + 0.06 * rng()) * inst.len * end
+            const hand = rng() < 0.5 ? -1 : 1
+            const lean = 0.35 + 0.3 * rng()
+            sheathe(film, curve, radius, {
+              t0: 0,
+              t1: 0.38 + 0.12 * rng(),
+              width: (s, c) => Math.min(wide, 0.95 * Math.max(0, c[1] - groundAt(world, c[0], c[2]))) * Math.pow(1 - s, 1.2),
+              toward: (T) => {
+                const d = add(norm(sub([0, -1, 0], scale(T, -T[1]))), scale(side, hand * lean))
+                return norm(sub(d, scale(T, dot(d, T))))
+              },
+              hand: 1,
+              twist: 0,
+              strandAt: (t) => t,
+              tag,
+              birth: birth + 0.2,
+              tone,
+            })
+          } else teardrop(solid, curve, radius, { birth: birth + 0.26, random: rng, tag, size: 0.7 })
+        }
+      }
     }
 
     // A film between two strands where the colony is established.
@@ -342,8 +405,11 @@ function buildBridgework(instances, world, { solid, film }) {
     }
 
     if (!lands) {
-      // A strand that stops short lets a bead hang from its tip.
-      drip(solid, strands[0].curve(1), 0.12 + 0.18 * random(), birth + 0.26, random)
+      // A strand that stops short lets a bead hang from its tip (M3S: grows
+      // on into one).
+      const lead = strands[0].tendril
+      if (lead && sheath) teardrop(solid, strands[0].curve, strands[0].radius, { birth: birth + 0.26, random, tag: registry[lead.id] })
+      else drip(solid, strands[0].curve(1), 0.12 + 0.18 * random(), birth + 0.26, random, lead ? registry[lead.id] : null)
     } else if (span) {
       const drips = Math.round(m * 1.5 + random() * 0.8)
       for (let k = 0; k < drips; k++) {
@@ -389,11 +455,30 @@ function stretchFilm(w, from, to, t0, t1, length, { birth, tone, open }) {
   )
 }
 
-/** A thin hanging thread ending in a bead. */
-function drip(w, top, length, birth, random) {
+/**
+ * A thin hanging thread ending in a bead. (M3C: hanging from a tendril, `tag`,
+ * the thread swells into its bead as a neck, and both go with the tendril's
+ * tip.)
+ */
+function drip(w, top, length, birth, random, tag = null) {
   const drift = [(random() - 0.5) * 0.08, 0, (random() - 0.5) * 0.08]
   const thread = (s) => add(add(top, scale(UP, -length * s)), scale(drift, Math.sin(Math.PI * s * 0.5)))
   w.set({ anchor: top, birth, span: 0.06 })
+  if (tag) {
+    // Drawn before its bead's radius is drawn from the generator, as before.
+    const r = 0.028 + 0.012 * random()
+    w.set({ strand: [tag.id, 1, tag.seed, TENDRIL_PART.bulb] })
+    tube(w, thread, (s) => (s < 0.55 ? lerp(0.016, 0.0095, s / 0.55) : lerp(0.0095, r * 0.62, smoothstep(0.55, 1, s))), {
+      segments: 12,
+      radial: 7,
+      side: [1, 0, 0],
+      sway: () => 0,
+    })
+    w.set({ sway: 0 })
+    sphere(w, add(thread(1), scale(UP, -r * 0.55)), r)
+    w.set({ strand: NO_STRAND })
+    return
+  }
   tube(w, thread, (s) => lerp(0.016, 0.009, s), {
     segments: 6,
     radial: 6,
@@ -404,6 +489,225 @@ function drip(w, top, length, birth, random) {
   w.set({ sway: 0.6 })
   sphere(w, add(thread(1), scale(UP, -r * 0.7)), r)
   w.set({ sway: 0 })
+}
+
+/* --- M3C: tendrils -------------------------------------------------------- */
+
+/**
+ * M3C (docs/26-colony-motion.md): a strand that ends in the air drawn as a
+ * tendril of the colony's tissue, not a tube on an arc. Its root flares
+ * into the ground or membrane it grows from; it narrows slowly with a few
+ * soft swellings along it; it bends a little out of its plane and twists,
+ * its tip hanging; one or two short branchlets leave its outer half, each
+ * ending in a small node. Each is tagged (FormWriter `strand`) with how far
+ * out along it each vertex lies, for the shader's TENDRIL block to move it
+ * from its root outward. Its own generator: no other form's changes.
+ */
+export const TENDRIL_PART = { stalk: 0, bulb: 1, branch: 2, neck: 0.5, sheath: 3 }
+
+function tendrilise(curve, radius, { len, side, seed, flare = true, soft = false }) {
+  const rng = mulberry32((seed ^ 0x5bd1e995) >>> 0)
+  const f = 0.7 + 0.8 * rng()
+  const ph = rng() * 6.28
+  const ph2 = rng() * 6.28
+  const A1 = (0.04 + 0.04 * rng()) * len
+  const A2 = (0.02 + 0.03 * rng()) * len
+  const hook = (0.04 + 0.06 * rng()) * len
+  // A few soft swellings, unevenly spaced, so it reads as grown in segments
+  // (soft tissue, not knots).
+  const nodes = Array.from({ length: 2 + Math.floor(rng() * 2) }, (_, k) => [0.2 + (0.6 * (k + 0.3 + 0.5 * rng())) / 3, 0.25 + 0.2 * rng()])
+  // Branchlets only where it is long enough to carry them.
+  const branches = len < 0.8 ? [] : Array.from({ length: rng() < 0.5 ? 2 : 1 }, (_, k) => 0.4 + 0.18 * k + 0.12 * rng())
+  if (soft) {
+    // M3S (docs/27-sheath-and-passage.md), after the morphology study's
+    // tapered arc: one continuous curve (a single slow bow aside, not a
+    // wave), a deeper crook at the tip for its bulb to hang from, a steady
+    // taper with at most two long, low swellings (never beads on a
+    // string), and no branchlets. Its root keeps the radius it grows from.
+    const R0 = flare ? (0.8 * radius(0.5)) / 0.773 : radius(0)
+    const swells = nodes.slice(0, 2).map(([at, k]) => [Math.min(0.7, at + 0.05), 0.35 * (k - 0.1)])
+    const bow = 0.5 + 0.4 * (f - 0.7)
+    const thick = (u) =>
+      R0 *
+      (1 - 0.6 * Math.pow(u, 1.4)) *
+      (1 + smoothstep(0.05, 0.2, u) * swells.reduce((a, [at, k]) => a + k * Math.exp(-(((u - at) / 0.17) ** 2)), 0)) *
+      (flare ? 1 + 1.0 * Math.pow(1 - u, 5) : 1)
+    // A reach (from the ground): not the strand's rise cut off in the air,
+    // which hooked over like a cane, but the study's tapered arc over the
+    // same ground: up from its root at a slant, over its high point, its tip
+    // hanging lower, toward where the strand was going.
+    let path = curve
+    let crook = 1.7 * hook
+    if (flare) {
+      const root = curve(0)
+      const end = curve(1)
+      let top = 0
+      for (let k = 1; k <= 10; k++) top = Math.max(top, curve(k / 10)[1] - root[1])
+      const hd = norm([end[0] - root[0], 0, end[2] - root[2]])
+      const D = Math.max(Math.hypot(end[0] - root[0], end[2] - root[2]), 0.5 * len)
+      const H = 1.15 * Math.max(top, 0.25 * len)
+      // (Its high point nearer its root than its tip, so it is not an arch.)
+      const P1 = add(add(root, scale(hd, 0.2 * D)), [0, 0.85 * H, 0])
+      const P2 = add(add(root, scale(hd, 0.5 * D)), [0, 1.25 * H, 0])
+      const P3 = add(add(root, scale(hd, D)), [0, 0.45 * H, 0])
+      path = (u) => {
+        const v = 1 - u
+        return add(add(scale(root, v * v * v), scale(P1, 3 * v * v * u)), add(scale(P2, 3 * v * u * u), scale(P3, u * u * u)))
+      }
+      crook = Math.min(crook, 0.3 * H)
+    }
+    return {
+      seed: rng(),
+      len,
+      branches: [],
+      curve: (u) => {
+        const b = Math.sin(Math.PI * u)
+        return add(add(path(u), scale(side, 0.8 * A1 * b * Math.sin(Math.PI * bow * u + 0.3 * ph))), [0, 0.3 * A2 * b * Math.sin(2 * Math.PI * u + ph2) - crook * smoothstep(0.6, 1, u) ** 2, 0])
+      },
+      radius: thick,
+    }
+  }
+  return {
+    seed: rng(),
+    len,
+    branches,
+    curve: (u) => {
+      const b = Math.sin(Math.PI * u)
+      return add(add(curve(u), scale(side, A1 * b * Math.sin(2 * Math.PI * f * u + ph))), [0, A2 * b * Math.sin(3 * Math.PI * u + ph2) - hook * smoothstep(0.75, 1, u) ** 2, 0])
+    },
+    radius: (u) => radius(u) * (1 + nodes.reduce((a, [at, k]) => a + k * Math.exp(-(((u - at) / 0.065) ** 2)), 0)) * (flare ? 1 + 0.6 * Math.pow(1 - u, 8) : 1),
+  }
+}
+
+/** Record a tendril for the motion (its root, tip, the way its tip points, its length), and return its tag. */
+function enlist(registry, tendril, { kind, colony }) {
+  const id = registry.length
+  const tip = tendril.curve(1)
+  const entry = {
+    id,
+    kind,
+    colony,
+    seed: tendril.seed,
+    root: tendril.curve(0),
+    tip,
+    dir: norm(sub(tip, tendril.curve(0.94))),
+    // (M3S: toward the inside of its arc, for its tip to draw in.)
+    inward: norm(sub(tendril.curve(0.6), tip)),
+    len: tendril.len,
+  }
+  registry.push(entry)
+  tendril.id = id
+  return entry
+}
+
+/** A short side branch from a tendril at u0, curving up and away and ending in a small node. */
+function branchlet(w, curve, radius, u0, { len, side, tag, birth }) {
+  const rng = mulberry32(((tag.seed * 1e6) ^ Math.round(u0 * 1e4)) >>> 0)
+  const base = curve(u0)
+  const T = norm(sub(curve(Math.min(1, u0 + 0.01)), curve(Math.max(0, u0 - 0.01))))
+  const hand = rng() < 0.5 ? -1 : 1
+  const out = norm(add(add(scale(T, 0.55), scale(side, 0.75 * hand)), scale(UP, 0.35)))
+  const Lb = len * (0.22 + 0.12 * rng())
+  const at = (s) => add(add(base, scale(out, Lb * s)), [0, Lb * (0.22 * Math.sin(Math.PI * s * 0.9) - 0.32 * s * s), 0])
+  const r0 = radius(u0) * 0.45
+  const out0 = u0 + (1 - u0) * 0.7
+  w.set({ anchor: base, birth, span: 0.06, sway: 0 })
+  tube(w, at, (s) => r0 * (1 - 0.7 * s) * (1 + 0.45 * Math.exp(-(((s - 0.55) / 0.08) ** 2))), {
+    segments: 20,
+    radial: 6,
+    side,
+    ring: (s) => ({ strand: [tag.id, u0 + (out0 - u0) * s, tag.seed + 0.37, TENDRIL_PART.branch] }),
+  })
+  w.set({ strand: [tag.id, out0, tag.seed + 0.37, TENDRIL_PART.branch] })
+  sphere(w, at(1), r0 * 0.8)
+}
+
+/**
+ * M3S (docs/27-sheath-and-passage.md): a thin membrane grown from a
+ * tendril's side, after the morphology study's ribbon root and its
+ * membrane–tendril hybrid. Over its curve from t0 to t1 one edge is held in
+ * the stalk and the other is free, as wide as `width(s)` (s 0..1 along it),
+ * cupped a little toward its free edge, lying across `across` at its start
+ * and turning about the stalk by `twist` as it goes (or, `toward(T)`, the
+ * way it spreads from the stalk at each point). Tagged with the
+ * stalk's own place along the tendril (`strandAt`), so it moves as the
+ * stalk does. A film, drawn with the colony's other films.
+ */
+function sheathe(w, curve, radius, { t0, t1, width, across = null, toward = null, hand, twist, strandAt, tag, birth, tone, fadeIn = 0 }) {
+  const I = 6
+  const J = Math.max(40, Math.round(90 * (t1 - t0)))
+  const tAt = (j) => lerp(t0, t1, j / J)
+  const frame = (j) => {
+    const t = tAt(j)
+    const e = 0.004
+    const T = norm(sub(curve(Math.min(1, t + e)), curve(Math.max(0, t - e))))
+    const s = j / J
+    let D
+    if (toward) D = toward(T)
+    else {
+      let L = sub(across, scale(T, dot(across, T)))
+      L = Math.hypot(...L) < 1e-4 ? norm(cross(T, UP)) : norm(L)
+      D = scale(rotateAbout(L, T, twist * s * s * (3 - 2 * s)), hand)
+    }
+    const c = curve(t)
+    return { c, D, N: norm(cross(T, D)), r: radius(t), s, wd: width(s, c) }
+  }
+  const frames = Array.from({ length: J + 1 }, (_, j) => frame(j))
+  let arc = 0
+  const along = frames.map((f, j) => (j ? (arc += Math.hypot(...sub(f.c, frames[j - 1].c))) : 0))
+  w.set({ birth, span: 0.1, tone, glow: 0, alpha: 0.3, open: 0, sway: 0 })
+  surfaceGrid(
+    w,
+    I,
+    J,
+    (i, j) => {
+      const { c, D, N, r, wd } = frames[j]
+      const a = i / I
+      return add(add(c, scale(D, r * 0.5 + wd * a)), scale(N, 0.14 * wd * a * a))
+    },
+    {
+      uv: (i, j) => [(i / I) * frames[j].wd, along[j]],
+      // Its free edge, and the end where it narrows into the stalk, are lit
+      // as a film's free edges are; the edge held in the stalk is not.
+      edge: (i, j) => Math.min(1, ((I - i) / I) * 2.2, 0.35 + (1 - frames[j].s) * 3),
+      state: (i, j) => ({
+        anchor: frames[j].c,
+        // Clearer toward its free edge, and it comes in softly where it starts.
+        alpha: (0.34 - 0.16 * (i / I)) * (fadeIn > 0 ? smoothstep(0, fadeIn, frames[j].s) : smoothstep(0, 0.1, frames[j].s + 0.06)),
+        strand: [tag.id, strandAt(tAt(j)), tag.seed, TENDRIL_PART.sheath],
+      }),
+    },
+  )
+  w.set({ strand: NO_STRAND, alpha: 1 })
+}
+
+/**
+ * M3S: a tendril's tip grown on into a teardrop bulb, its neck the tip
+ * itself, turning down to hang (the study's integrated bulb, not a ball on
+ * a thread). Three draws from `random`, as a drip takes. Its neck swings
+ * with the tip's lag as one piece with it (TENDRIL_PART.bulb, eased in).
+ */
+function teardrop(w, curve, radius, { birth, random, tag, size = 1 }) {
+  const lean = [(random() - 0.5) * 0.3, 0, (random() - 0.5) * 0.3]
+  const rt = radius(1)
+  const Rb = Math.max(0.016, rt * (2.6 + 0.8 * random())) * size
+  const tip = curve(1)
+  const T = norm(sub(tip, curve(0.985)))
+  const Lb = 2.5 * Rb
+  const P1 = add(tip, scale(T, 0.5 * Lb))
+  const P2 = add(P1, scale(norm(add(add(scale(T, 0.3), [0, -1, 0]), lean)), 0.85 * Lb))
+  const at = (s) => add(add(scale(tip, (1 - s) ** 2), scale(P1, 2 * s * (1 - s))), scale(P2, s * s))
+  const sm = 0.6
+  const r = (s) => (s < sm ? rt + (Rb - rt) * Math.pow(smoothstep(0, 1, s / sm), 1.3) : Rb * Math.sqrt(Math.max(0, 1 - ((s - sm) / (1 - sm)) ** 2)))
+  w.set({ anchor: tip, birth, span: 0.06, sway: 0 })
+  tube(w, at, r, {
+    segments: 18,
+    radial: 10,
+    side: [1, 0, 0],
+    ring: (s) => ({ strand: [tag.id, 1, tag.seed, TENDRIL_PART.neck + (TENDRIL_PART.bulb - TENDRIL_PART.neck) * smoothstep(0, 0.7, s)] }),
+    slope: true,
+  })
+  w.set({ strand: NO_STRAND })
 }
 
 /* --- Membrane Bloom ------------------------------------------------------ */
@@ -471,7 +775,12 @@ const ANCHOR_SHAPE = { ...BLOOM_SHAPE, crest: [0.5, 0.75], lean: [72, 80], peel:
  */
 export const bloomSurfaces = new WeakMap()
 
-export function buildBlooms(instances, world, ribs) {
+/**
+ * `detail` (M3L, docs/25-living-membrane.md): more columns across and rows
+ * up ([across, up]), for a membrane drawn with folds the coarse grid cannot
+ * hold. The same shape: no random draw depends on the grid.
+ */
+export function buildBlooms(instances, world, ribs, { detail = [1, 1], registry = null, sheath = null } = {}) {
   const solid = new FormWriter()
   const film = new FormWriter()
   const deg = (v) => (v * Math.PI) / 180
@@ -525,8 +834,8 @@ export function buildBlooms(instances, world, ribs) {
     const web = single ? 0 : 0.32
     const taper = (w) => 1 - smoothstep(0.62, 1, Math.abs(w))
 
-    const I = Math.max(16, 15 * n)
-    const J = anchorRole ? 24 : 18
+    const I = Math.round(Math.max(16, 15 * n) * detail[0])
+    const J = Math.round((anchorRole ? 24 : 18) * detail[1])
     const fold = 0.1 * H * (n > 1 ? 1 : 0.4)
     const phase = random() * 6
     const thetaGround = deg(8 + 8 * random())
@@ -604,7 +913,7 @@ export function buildBlooms(instances, world, ribs) {
       // Structure merges in: ribs run up the tallest crests and on past
       // their lips.
       order.slice(0, inst.ribs).forEach(({ i }, k) => {
-        rib(ribs, columns, i, { H: H * (k ? 0.75 : 1), side: across, birth: birth + 0.16 + k * 0.05, random })
+        rib(ribs, columns, i, { H: H * (k ? 0.75 : 1), side: across, birth: birth + 0.16 + k * 0.05, random, registry, seed: inst.seed * 7 + k, sheath, tone })
       })
     } else if (random() < m * 0.7) {
       // A bead gathers on the curled lip of the tallest crest.
@@ -624,7 +933,7 @@ export function buildBlooms(instances, world, ribs) {
  * membrane, and carrying on a little past the lip before it droops and lets
  * a bead hang. It grows from the ground up, after the veil has risen.
  */
-function rib(w, columns, i, { H, side, birth, random }) {
+function rib(w, columns, i, { H, side, birth, random, registry = null, seed = 0, sheath = null, tone = 0.5 }) {
   const col = columns[i].column
   const normalAt = (j) => {
     const a = columns[Math.min(columns.length - 1, i + 1)].column[j]
@@ -637,17 +946,76 @@ function rib(w, columns, i, { H, side, birth, random }) {
   const points = col.map((p, j) => add(p, scale(normalAt(j), r0 * 0.8)))
   const last = points[points.length - 1]
   const dir = norm(sub(last, points[points.length - 3]))
-  for (let k = 1; k <= 3; k++) points.push(add(last, add(scale(dir, 0.06 * k * H), [0, -0.025 * k * k * H, 0])))
+  const lip = points.length - 1
+  if (registry) {
+    // M3C: past the lip it reaches further, rising a little before it hangs,
+    // and turns aside.
+    const hand = (seed % 2 ? 1 : -1) * 0.02 * H
+    for (let k = 1; k <= 5; k++) points.push(add(last, add(add(scale(dir, 0.07 * k * H), scale(side, hand * k * k * 0.2)), [0, (0.03 * k - 0.014 * k * k) * H, 0])))
+  } else for (let k = 1; k <= 3; k++) points.push(add(last, add(scale(dir, 0.06 * k * H), [0, -0.025 * k * k * H, 0])))
   const curve = new THREE.CatmullRomCurve3(points.map((p) => new THREE.Vector3(p[0], p[1], p[2])))
-  const at = (t) => curve.getPoint(t).toArray()
+  let at = (t) => curve.getPoint(t).toArray()
+  let radius = (t) => r0 * (1 + 1.4 * Math.pow(1 - t, 4)) * (1 - 0.75 * t * t)
+  // (M3C: the free part, from the lip, is the tendril, in its own measure
+  // from the lip (0) to its tip (1); along the veil it stays where it is.)
+  const from = lip / (points.length - 1)
+  let tag = null
+  let tendril = null
+  if (registry) {
+    const at0 = at
+    const r00 = radius
+    tendril = tendrilise((v) => at0(from + (1 - from) * v), (v) => r00(from + (1 - from) * v), { len: 0.4 * H, side, seed, flare: false, soft: !!sheath })
+    at = (t) => (t <= from ? at0(t) : tendril.curve((t - from) / (1 - from)))
+    radius = (t) => (t <= from ? r00(t) : tendril.radius((t - from) / (1 - from)))
+    tag = enlist(registry, tendril, { kind: 'rib', colony: -1 })
+  }
   w.set({ anchor: points[0], tone: 0.55, glow: 0, alpha: 1, open: 0, sway: 0 })
-  tube(w, at, (t) => r0 * (1 + 1.4 * Math.pow(1 - t, 4)) * (1 - 0.75 * t * t), {
-    segments: 44,
+  tube(w, at, radius, {
+    // (M3S: finer, so the free part bends as one curve.)
+    segments: sheath ? 180 : registry ? 72 : 44,
     radial: 7,
     side,
-    ring: (t) => ({ birth: birth + t * 0.16, span: 0.05 }),
+    ring: (t) => ({ birth: birth + t * 0.16, span: 0.05, ...(tag ? { strand: [tag.id, Math.max(0, (t - from) / (1 - from)), tag.seed, TENDRIL_PART.stalk] } : null) }),
   })
-  drip(w, at(1), 0.1 + 0.12 * random(), birth + 0.18, random)
+  if (tendril) {
+    // Its branchlets leave the free part.
+    for (const v of tendril.branches) branchlet(w, tendril.curve, tendril.radius, v, { len: 0.4 * H, side, tag, birth: birth + 0.2 })
+    w.set({ strand: NO_STRAND })
+  }
+  if (tendril && sheath) {
+    // M3S: the membrane's crest carries on past its lip as a blade along the
+    // tendril, lying as the membrane does there (along its rim) and turning
+    // as it narrows into the stalk; then the bare tendril and its bulb.
+    const rim = sub(columns[Math.min(columns.length - 1, i + 1)].column[lip], columns[Math.max(0, i - 1)].column[lip])
+    const rng = mulberry32(((seed * 2654435761) ^ 0x68e31da4) >>> 0)
+    const wide = (0.08 + 0.04 * rng()) * H
+    // From well down the crest, so it opens out of the membrane's own edge.
+    const t0 = from - 0.14
+    const t1 = from + (0.45 + 0.15 * rng()) * (1 - from)
+    const open = (from - t0) / (t1 - t0)
+    sheathe(sheath, at, radius, {
+      t0,
+      t1,
+      // A long leaf: nothing where it leaves the crest, widest a little past
+      // the lip, then narrowing away into the stalk.
+      width: (s) => {
+        const peak = open + 0.12 * (1 - open)
+        return wide * (s < peak ? Math.pow(Math.sin((0.5 * Math.PI * s) / peak), 1.6) : Math.pow(Math.max(0, Math.cos((0.5 * Math.PI * (s - peak)) / (1 - peak))), 1.5))
+      },
+      fadeIn: open,
+      across: norm(rim),
+      hand: rng() < 0.5 ? -1 : 1,
+      twist: (rng() < 0.5 ? -1 : 1) * (0.5 + 0.4 * rng()),
+      strandAt: (t) => Math.max(0, (t - from) / (1 - from)),
+      tag,
+      birth: birth + 0.2,
+      tone,
+    })
+    random()
+    teardrop(w, at, radius, { birth: birth + 0.18, random, tag })
+    return
+  }
+  drip(w, at(1), 0.1 + 0.12 * random(), birth + 0.18, random, tag)
 }
 
 /** Rotate v about a unit axis by angle (Rodrigues). */
@@ -1002,13 +1370,23 @@ function buildBeads(instances) {
  * first, into writers the blooms also draw into: an anchor's ribs belong to
  * Bridgework, so soloing Membrane Bloom shows the membrane without them.
  */
-export function buildScatterGeometry(scatter, world) {
+export function buildScatterGeometry(scatter, world, { tendrils = false } = {}) {
   const { layers } = scatter
   const structure = { solid: new FormWriter(), film: new FormWriter() }
-  buildBridgework(layers.bridgework.instances, world, structure)
-  const bloom = buildBlooms(layers.bloom.instances, world, structure.solid)
+  // M3C: the strands that end in the air drawn as tendrils, each recorded
+  // (on the structure's geometry, `userData.tendrils`) for their motion.
+  // M3S (`tendrils: 'sheath'`): softer, sheathed in membrane where they
+  // leave the colony, and each ending in its bulb (the structure's films
+  // then carry the tendrils' tags too, so a sheath moves with its stalk).
+  const registry = tendrils ? [] : null
+  const sheath = tendrils === 'sheath'
+  if (sheath) structure.film.strandUsed = true
+  buildBridgework(layers.bridgework.instances, world, structure, { registry, sheath })
+  const bloom = buildBlooms(layers.bloom.instances, world, structure.solid, { registry, sheath: sheath ? structure.film : null })
+  const solid = structure.solid.toGeometry()
+  if (solid && registry) solid.userData.tendrils = registry
   return {
-    bridgework: { solid: structure.solid.toGeometry(), film: structure.film.toGeometry() },
+    bridgework: { solid, film: structure.film.toGeometry() },
     bloom,
     shard: buildShards(layers.shard.instances),
     bead: buildBeads(layers.bead.instances),

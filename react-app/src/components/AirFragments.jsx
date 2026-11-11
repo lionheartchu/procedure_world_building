@@ -95,6 +95,12 @@ const VERTEX = /* glsl */ `
   attribute float aLoad;
   varying float vLoad;
   #endif
+  #ifdef PASSAGE
+  // The Habitat's M3S: how far it has travelled (as a phase) and how
+  // strongly its comb rows show (LifecycleLayer PASSAGE).
+  attribute vec2 aPass;
+  varying vec2 vPass;
+  #endif
 
   #include <fog_pars_vertex>
 
@@ -170,6 +176,9 @@ const VERTEX = /* glsl */ `
     #ifdef CARRIER
     vLoad = aLoad;
     #endif
+    #ifdef PASSAGE
+    vPass = aPass;
+    #endif
 
     vec4 mvPosition = viewMatrix * world;
     gl_Position = projectionMatrix * mvPosition;
@@ -207,6 +216,9 @@ const FRAGMENT = /* glsl */ `
   #ifdef CARRIER
   uniform vec3 uGrain;
   varying float vLoad;
+  #endif
+  #ifdef PASSAGE
+  varying vec2 vPass;
   #endif
   #ifdef KIN
   // M3E: a film from a resident, drawn as a piece of that resident's sheet:
@@ -380,6 +392,28 @@ const FRAGMENT = /* glsl */ `
     col = mix(col, uGrain, silt * 0.5 + grain * 0.6);
     alpha = max(alpha, silt * 0.35 + grain * 0.45);
     #endif
+    #ifdef PASSAGE
+    // M3S: while it is carried, soft rows of a thin film's colours cross it
+    // from its leading edge back (its x lies along the air that carries
+    // it), as a ctenophore's comb rows do: they move only as far as it
+    // actually travels, so they slow as it slows and stand when it settles.
+    {
+      // It holds a little of its own light, with a fine lit margin round its
+      // outline, so it reads over pale ground as well as against the sky
+      // (seen from above, a clear film over the ground was all but lost).
+      // (As luminous as the membrane it left: lit only as the air's skins
+      // are, it read as a grey smudge beside it.)
+      float margin = (1.0 - smoothstep(0.0, 0.06, edge)) * body;
+      col = mix(col, uBright, 0.32 * body + 0.35 * margin);
+      alpha = max(alpha, 0.34 * body) + 0.3 * margin;
+      float row = pow(0.5 + 0.5 * sin(p.x * 6.0 + vPass.x), 4.0);
+      float comb = row * vPass.y * body;
+      vec3 irid = opal(0.18 * p.x - 0.05 * vPass.x + 0.6 * (1.0 - facing) + h1(s * 2.3));
+      col = mix(col, irid * (0.55 + 0.4 * wrap), 0.6 * comb);
+      col += irid * 0.12 * comb;
+      alpha += 0.14 * comb;
+    }
+    #endif
     #ifdef WARM
     // Screened light over the scene: it cannot darken into brown, so no gate.
     col = warmed(col, vWarm) + uWarmTint * vWarm * uWarmGlow * body;
@@ -423,7 +457,7 @@ const tmp = {
  * Exported so the lifecycle experiment (study 10) can show its shed films
  * in exactly this material; AirFragments uses it for its own slots.
  */
-export function createFilmMesh(n, { carrier = false, over = false, kin = false } = {}) {
+export function createFilmMesh(n, { carrier = false, over = false, kin = false, passage = false } = {}) {
   const geometry = makePatch()
   geometry.setAttribute('aSeed', new THREE.InstancedBufferAttribute(new Float32Array(n), 1))
   const fade = new THREE.InstancedBufferAttribute(new Float32Array(n), 1)
@@ -444,6 +478,13 @@ export function createFilmMesh(n, { carrier = false, over = false, kin = false }
     geometry.setAttribute('aLoad', load)
     defines.CARRIER = ''
     extra.uGrain = hexUniform('#EEE6F6')
+  }
+  if (passage) {
+    // M3S (LifecycleLayer `passage`): its comb rows, as far as it has travelled.
+    const pass = new THREE.InstancedBufferAttribute(new Float32Array(n * 2), 2)
+    pass.setUsage(THREE.DynamicDrawUsage)
+    geometry.setAttribute('aPass', pass)
+    defines.PASSAGE = ''
   }
   if (kin) {
     // M3E (LifecycleLayer `kinFilms`): the resident's own film colours (ScatterLayers' bloom film).

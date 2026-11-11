@@ -8,7 +8,7 @@ stands, not a slide deck.*
 | **Checkpoint** | Habitat M3E, commit `0423401` on `local-experiments` (pushed) |
 | **Live the ecology** | `/habitat/m3e` (locally `http://localhost:5173/habitat/m3e`) |
 | **Explore and the Atlas** | `/`, `/atlas` |
-| **The studies behind it** | [README](../../README.md#studies): studies 01–22 |
+| **The studies behind it** | [Study index](../studies.md): studies 01–22 |
 
 Every claim below carries one of four labels:
 

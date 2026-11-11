@@ -18,7 +18,8 @@ export default function Landing() {
         <div className="landing-bloom" />
       </div>
 
-      <AtlasHeader tone="dark" />
+      {/* The way in, so its links stay shown here rather than fading. */}
+      <AtlasHeader tone="dark" always />
 
       <section className="landing-copy">
         <p className="landing-kicker">Residual Ecology</p>

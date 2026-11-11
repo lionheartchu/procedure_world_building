@@ -361,7 +361,8 @@ SPACES.m2 = {
  * leads. Featuring another space means changing only this; every space
  * keeps its own route, `/habitat/<key>`, as well.
  */
-export const FEATURED = 'm2'
+// M3S (docs/27-sheath-and-passage.md), the latest checkpoint; M2 until then.
+export const FEATURED = 'm3s'
 
 /**
  * M3 (docs/21-habitat-m3.md): M2 with three changes, none to the ecology:
@@ -520,6 +521,77 @@ SPACES.m3e = {
   encounter: true,
   kinFilms: true,
   unstick: true,
+}
+
+/**
+ * M3N (docs/24-noticing.md): M3E, with residents noticing the visitor before
+ * any touch (`notice`, lib/notice.js). The nearest one or two frost on the
+ * visitor's side, as densely as the matter they hold, and draw back as
+ * their tension has it; old contours frost faintly as they are passed.
+ * Presentation only: the simulation is M3E's exactly.
+ */
+SPACES.m3n = {
+  ...SPACES.m3e,
+  key: 'm3n',
+  title: 'M3N · noticed (prototype)',
+  notice: true,
+}
+
+/**
+ * M3L (docs/25-living-membrane.md): M3N with its residents drawn as living
+ * membranes (`living`, LifecycleLayer): fluted and ruffled as deep as the
+ * matter they hold, gathering when noticed and opening again after. And an
+ * arrival that looks along a short walk past two standing residents
+ * (`arriveAt`: where, and what it looks at). Presentation only: the
+ * simulation is M3N's (and M3E's) exactly.
+ */
+SPACES.m3l = {
+  ...SPACES.m3n,
+  key: 'm3l',
+  title: 'M3L · living membrane (prototype)',
+  living: true,
+  // On open ground between colonies 2 and 4, looking along a short walk to
+  // colony 4's #7 (about five units ahead) and colony 5's #3 beyond it.
+  arriveAt: { at: [-6.2, 3.4], look: [-0.5, 0.6, 4.7] },
+}
+
+/**
+ * M3C (docs/26-colony-motion.md): M3L refined toward the colony encounter
+ * study, a prototype. The membranes' folds broader and turning across them,
+ * gathering into a cupped shell (`living: 'fan'`); and the colony's strands
+ * that end in the air drawn as tendrils, each drifting on its own and
+ * briefly registering a stranger before it returns to its drift
+ * (`tendrils`, lib/tendrils.js). Presentation only: the simulation is
+ * M3N's exactly.
+ */
+SPACES.m3c = {
+  ...SPACES.m3l,
+  key: 'm3c',
+  title: 'M3C · colony motion (prototype)',
+  living: 'fan',
+  tendrils: true,
+}
+
+/**
+ * M3S (docs/27-sheath-and-passage.md): M3C with its tendrils grown out of
+ * the colony rather than set on it, and its films' real passage drawn to be
+ * followed, a prototype. Presentation only: the simulation is M3N's
+ * exactly, and nothing travels along a tendril.
+ *   - `tendrils: 'sheath'`: a ribbon of membrane at a reach's root, an
+ *     anchor's crest carried on past its lip as a blade, one continuous
+ *     taper to a teardrop bulb grown from the tip, no branchlets, and a
+ *     gentler registering (no periscope lift)
+ *   - `passage`: a film as it comes away (a thin film's colours round the
+ *     opening it leaves), in flight (bands of the same colours crossing it
+ *     as far as it actually travels, and a fine fading trace of the path
+ *     it took), and as it settles (it spreads and clears into the residue)
+ */
+SPACES.m3s = {
+  ...SPACES.m3c,
+  key: 'm3s',
+  title: 'M3S · sheathed tendrils, a visible passage (prototype)',
+  tendrils: 'sheath',
+  passage: true,
 }
 
 /** A space with a look applied (or as it is). */

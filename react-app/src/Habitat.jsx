@@ -17,9 +17,12 @@ import { buildFarField } from './lib/farField'
 import { Membrane, ResidentEncounter, tensionOf } from './lib/encounter'
 import { FEATURED, LOOKS, SPACES, withLook } from './lib/habitat'
 import { composeSpace } from './lib/habitatCompose'
+import { arriveAt } from './lib/habitatSpaces'
 import { prerun } from './lib/habitatWorld'
 import { Commons, prerunTogether } from './lib/morph'
 import MorphAir from './components/MorphAir'
+import PerceptionInspector, { createPerceptionStore, PerceptionProbe } from './components/PerceptionInspector'
+import { Noticing } from './lib/notice'
 import { softLink, usePath } from './lib/route'
 import './App.css'
 import './Habitat.css'
@@ -45,17 +48,17 @@ const noop = () => {}
 const DPR = typeof window !== 'undefined' ? Number(new URLSearchParams(window.location.search).get('dpr')) || null : null
 
 /** Development diagnostics, like the lifecycle's own (`window.__habitat`). */
-function Diagnostics({ lifecycles, membrane, composed, ground, commons, encounter }) {
+function Diagnostics({ lifecycles, membrane, composed, ground, commons, encounter, notice }) {
   const gl = useThree((s) => s.gl)
   const scene = useThree((s) => s.scene)
   const camera = useThree((s) => s.camera)
   const clock = useThree((s) => s.clock)
   useEffect(() => {
-    window.__habitat = { gl, scene, camera, clock, lifecycles, membrane, composed, ground, commons, encounter }
+    window.__habitat = { gl, scene, camera, clock, lifecycles, membrane, composed, ground, commons, encounter, notice }
     return () => {
       delete window.__habitat
     }
-  }, [gl, scene, camera, clock, lifecycles, membrane, composed, ground, commons, encounter])
+  }, [gl, scene, camera, clock, lifecycles, membrane, composed, ground, commons, encounter, notice])
   return null
 }
 
@@ -98,6 +101,13 @@ function ResidentEncounterDriver({ encounter, lifecycles }) {
     encounter.respond(r ? tensionOf(r, LIFECYCLE.bodyPerHeight, LIFECYCLE.lies) : 0)
     encounter.update(Math.min(delta, 0.1))
   })
+  return null
+}
+
+/** M3N: the residents noticing the visitor (lib/notice.js), each frame, on the visitor's clock. */
+function NoticeDriver({ notice, lifecycles }) {
+  const camera = useThree((s) => s.camera)
+  useFrame((_, delta) => notice.update(camera.position.toArray(), lifecycles, Math.min(delta, 0.1)))
   return null
 }
 
@@ -159,6 +169,10 @@ const MOTION = QUERY.get('motion')
  * where the visitor arrives.
  */
 const LOOK_ASKED = QUERY.get('look')
+/** Study 23's development inspector (`?perceive=1`): what the resident nearest the visitor could read. */
+const PERCEIVE = QUERY.get('perceive') === '1'
+/** Study 23's experiment (`?respond=matter`, spaces with a commons only): the cue sets off a resident by its gathered cue weighed by its fullness, not only a full one (Lifecycle `respond`). */
+const RESPOND = QUERY.get('respond') === 'matter' ? 'matter' : 'full'
 const CANOPY_ASKED = QUERY.get('canopy')
 
 /** C's canopy: the bloom film, quieter (see Formation). */
@@ -233,7 +247,7 @@ export default function Habitat() {
           colony: patch.colony,
           ...(patch.holds ? { holds: patch.holds } : {}),
           airNear: size > FIELD_SIZE,
-          ...(commons ? { commons, worldOffset: Math.round((patch.age ?? 0) / LIFECYCLE.step) } : {}),
+          ...(commons ? { commons, worldOffset: Math.round((patch.age ?? 0) / LIFECYCLE.step), respond: RESPOND } : {}),
         })
         life.setWarm(H.warm)
         if (patch.age && !commons) prerun(life, patch.age)
@@ -259,6 +273,8 @@ export default function Habitat() {
   // M3E: the resident encounter, met as the veil is (a contact that yields).
   const residentEncounter = useMemo(() => (H.encounter ? new ResidentEncounter({ world }) : null), [H, world])
   const contacts = useMemo(() => [membrane, residentEncounter].filter(Boolean), [membrane, residentEncounter])
+  const perception = useMemo(() => (PERCEIVE ? createPerceptionStore() : null), [])
+  const noticing = useMemo(() => (H.notice ? new Noticing(H.living ? { frost: 0.35, cup: false, curl: false } : undefined) : null), [H])
   const drawnApart = useMemo(() => (veil ? [veil] : []), [veil])
   const metApart = useMemo(() => [...drawnApart, ...lifecycles.flatMap((l) => l.first)], [drawnApart, lifecycles])
 
@@ -275,7 +291,8 @@ export default function Habitat() {
     [H, scatter, commons],
   )
   const presenceAir = useMemo(() => ({ drift: H.air.drift, curl: H.air.curl, colony: H.air.colony }), [H])
-  const arrival = composed.arrival
+  // M3L: a space may set where the visitor arrives (`arriveAt`: [x, z] and where they look).
+  const arrival = useMemo(() => (H.arriveAt ? arriveAt(world, H.arriveAt.at[0], H.arriveAt.at[1], H.arriveAt.look) : composed.arrival), [H, world, composed])
   const canopy = showCanopy ? composed.canopy : null
   const forms = useMemo(() => composed.vessels?.met ?? canopy?.met ?? [], [composed, canopy])
 
@@ -329,6 +346,10 @@ export default function Habitat() {
           closeRange={!!H.closeRange}
           encounter={residentEncounter}
           kinFilms={!!H.kinFilms}
+          notice={noticing}
+          living={H.living ?? false}
+          tendrils={H.tendrils ?? false}
+          passage={!!H.passage}
         />
         {composed.vessels?.film && (
           <Formation geometry={composed.vessels.film} formOptions={formOptions} accumulation={accumulation} openness={H.scatter.bloomOpenness} world={world} />
@@ -350,11 +371,14 @@ export default function Habitat() {
         )}
         {commons && H.cueAir !== 'wisps' && <MorphAir commons={commons} />}
         {residentEncounter && <ResidentEncounterDriver encounter={residentEncounter} lifecycles={lifecycles} />}
+        {noticing && <NoticeDriver notice={noticing} lifecycles={lifecycles} />}
+        {perception && <PerceptionProbe store={perception} lifecycles={lifecycles} accumulation={accumulation} encounter={residentEncounter} />}
         <PresenceCamera world={world} scatter={scatter} lifecycle={null} air={presenceAir} inside arrival={arrival} withhold={metApart} contacts={contacts} forms={forms} smooth={(MOTION ?? H.motion) === 'smooth'} bound={H.bound} nearAir={size > FIELD_SIZE} unstick={!!H.unstick} />
-        <Diagnostics lifecycles={lifecycles} membrane={membrane} composed={composed} ground={ground} commons={commons} encounter={residentEncounter} />
+        <Diagnostics lifecycles={lifecycles} membrane={membrane} composed={composed} ground={ground} commons={commons} encounter={residentEncounter} notice={noticing} />
       </Scene>
 
       <HabitatCorner title={title} pale={paleSky} />
+      {perception && <PerceptionInspector store={perception} />}
       <p className={`habitat-keys${hint ? '' : ' is-quiet'}`}>Drag to look · W A S D or arrows to drift · Q E lower, rise · Shift faster · scroll to edge closer</p>
     </div>
   )

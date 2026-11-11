@@ -1,232 +1,202 @@
-# Residual Ecology
+<p align="center"><img src="docs/images/readme/kicker.svg" alt="A procedural ecology" width="360"></p>
 
-*A procedural world shaped by what has happened in it.*
+<h1 align="center">Residual Ecology</h1>
 
-![The app as it opens: a lavender landscape under soft haze, pale translucent colonies on its higher ground, fine particles in the air, and the Explore panel on the right](docs/images/explore-2026-10.png)
+<p align="center"><i>A world shaped by what has happened in it.</i></p>
 
-*The app as it opens on Explore, on its default world. A capture from the
-app, 14 October 2026.*
+<br>
 
-Residual Ecology is an ongoing study in procedural world-building. Its
-ground carries a history: sediment drifts, settles and thickens over a
-generated landform, and life takes hold where that record allows. Pale,
-half-translucent colonies gather on the deeper deposits. The matter they
-hold gives off a soft light through the ground around them, and the air
-slows and turns as it passes.
+![A first-person view across the Habitat: pale translucent colonies on a lavender plain, one anchor's crest rising into a long tendril that hangs a small bulb](docs/images/readme/hero-m3s.jpg)
 
-One question runs through it:
+<br>
 
-> How can a procedural world reveal its own history through the traces its
-> systems leave behind?
+<p align="center">
+The ground of this world carries a history. Sediment settles over a generated
+landform; translucent colonies grow where that record allows; residents rise,
+lie down and let their matter go on the air, and what settles feeds what grows
+next. It can be explored as a whole, or walked through.
+</p>
 
-It is a research practice rather than a finished piece: a sequence of
-studies that has grown into one shared world. Each study is kept with its
-notes, its successes and its failures.
+<p align="center"><img src="docs/images/readme/divider.svg" alt="" width="240"></p>
 
-## The world
+<p align="center"><i>How can a procedural world reveal its own history<br>through the traces its systems leave behind?</i></p>
 
-| | |
-|---|---|
-| **Ground** | A landform from layered noise and shaping, given relief, and cut by a few water veins traced downhill as splines |
-| **Record** | A small sediment model (supply, transport, deposition) run over that ground for a chosen span of time before anything grows |
-| **Life** | Colonies in three related languages (structure, membrane and residue), formed where the ground and the record allow; a fine tissue network grows around the first |
-| **Light** | Held in the matter the colonies laid down, and spread through the record rather than cast from a source |
-| **Air** | Dust, wisps, haze and rare fragments, carried by one flow field that bends around the colonies |
-| **Water** | Basins and streams as translucent veils over the ground |
+<p align="center"><img src="docs/images/readme/divider.svg" alt="" width="240"></p>
 
-## How it fits together
+<br>
 
-```
-landform ─► relief ─► water veins carved in
-                         │
-                         ▼
-          sediment record   (the simulation, run for N seconds)
-                         │
-                         ▼
-          colonies          (where the ground and the record allow)
-                         │
-                         ▼
-   forms · tissue · light held in their matter · the air around them
-```
+<img src="docs/images/readme/section-01.svg" alt="01" height="34">
 
-Each step reads the one before it, and the chain runs one way:
-- **The world is recomputed from its parameters** whenever something that
-  shapes it changes, with the record computed in advance.
-- **Some things move continuously:** the air drifts and the water moves.
-- **The record and the colonies do not develop while you watch.** *Growth*
-  replays how the forms appear; it does not grow new ones.
+## The World
 
-A world that keeps writing its own history, with life feeding back into the
-record, is a direction ahead rather than the current state. A bounded demo
-exists behind a development flag
-([study 10](docs/10-lifecycle-concept.md#stages-02-demo-17-october-2026)):
-- **Residents change at different times.** In one small patch, they lie
-  down and release films that the air carries.
-- **Where the films settle, a visible residue stays**, beside the
-  resident's faint contour.
-- **A new resident forms** there and takes that matter up, or the patch
-  waits.
+<p>
+<img src="docs/images/readme/world-terrain.jpg" alt="Terrain: a dark lavender landform under haze" width="24%">
+<img src="docs/images/readme/world-water.jpg" alt="Water: a translucent stream in its channel" width="24%">
+<img src="docs/images/readme/world-air.jpg" alt="Air: wisps drifting round a colony" width="24%">
+<img src="docs/images/readme/world-membranes.jpg" alt="Membranes: translucent lobed sheets of a colony" width="24%">
+</p>
 
-It is one patch of one colony, off by default, and bounded: the patch winds
-down after about 500 s. A shared tissue between colonies, with its fold
-and greybox studies, is an unfinished experiment, paused. Feedback to
-residents, an emergent core and a history kept between sessions are
-proposed, not implemented.
+<img src="docs/images/readme/labels-world-1.svg" alt="Terrain, water, air, membranes" width="97%">
 
-![Before and after the composition and light pass: on the right, colonies gather around a first, fuller colony and light is held in the ground around them](docs/images/09-overview.png)
+<p>
+<img src="docs/images/readme/world-branching.jpg" alt="Branching: fine tissue spreading from a colony over the ground" width="24%">
+<img src="docs/images/readme/world-residue.jpg" alt="Residue: pale deposit on the ground beside a colony" width="24%">
+<img src="docs/images/readme/world-light.jpg" alt="Light: colonies glowing from the matter beneath them" width="24%">
+<img src="docs/images/readme/world-colonies.jpg" alt="Colonies: pale forms spread across a wide horizon" width="24%">
+</p>
 
-*Colonies that gather, and light held in the matter they laid down: before
-and after (study 09).*
+<img src="docs/images/readme/labels-world-2.svg" alt="Branching, residue, light, colonies" width="97%">
 
-## Exploring it
+<sub>A landform with its sediment record, water veins traced downhill, one flow of air, and colonies at different ages, whose matter settles as residue and holds light. Captures from Explore (dark) and the Habitat (pale).</sub>
 
-The app opens on **Explore**, the whole world in one view. Drag to orbit,
-scroll to zoom; **W** shows the wireframe. Its panel follows the order the
-world is made in:
+<br><br>
 
-| Section | What it holds |
-|---|---|
-| **World** | World seed, landform, water veins, and water appearance |
-| **Record** | History: how much sediment is laid down, and the record's rules |
-| **Life** | Colony seed and the three languages |
-| **Emergence** | Growth: the colonies' appearance, replayed |
-| **Atmosphere** | The air |
+<img src="docs/images/readme/section-02.svg" alt="02" height="34">
 
-One word beside each section says what kind of change it holds:
-- **regenerates:** the world is rebuilt
-- **rewrites record:** the record is laid down again
-- **view only:** changes how it is seen, never what it is
+## Living Systems
 
-Changes that rebuild the world apply when you let go. Tooltips explain what
-follows from what.
+![An anchor's membrane crest opening into a leaf-like blade that narrows into a slender arcing tendril ending in a teardrop bulb](docs/images/readme/living-morphology.jpg)
 
-The weekly studies sit behind **Studies**, each still its own view on the
-same state:
-- **Field:** the terrain and the live sediment simulation
-- **Volume:** an independent study with its own density field and scene;
-  it shares no state with the world
-- **Shaders:** three material readings of the ground
-- **Scatter:** the colony rules, one language at a time
+<sub><b>Morphology</b> &ensp;·&ensp; An anchor's crest carries on as a blade, then a tendril and its bulb, each drifting on its own clock &ensp;·&ensp; <a href="docs/27-sheath-and-passage.md">M3S</a></sub>
 
-An optional **Library** stores configurations (Firebase and a Google
-sign-in).
+<br><br>
 
-| | |
-|---|---|
-| ![Close up: translucent strands leave a membrane and root into a fine branching tissue on the ground](docs/images/08t-detail.png) | ![A broad, shallow translucent stream lying in a soft channel, widening toward the basin, with pale forms on the bank](docs/images/06-stream.png) |
-| *Strands leaving a membrane into the tissue on the ground, close up (study 08, one colony).* | *A water vein lying in its channel, running down to the basin (study 06).* |
+<p>
+<img src="docs/images/readme/sense-rest.jpg" alt="A resident standing open, the visitor at a distance" width="32%">
+<img src="docs/images/readme/sense-gather.jpg" alt="The same resident gathered into itself, the visitor close" width="32%">
+<img src="docs/images/readme/sense-return.jpg" alt="The same resident open again after the visitor has stepped back" width="32%">
+</p>
 
-## Technical approach
+<img src="docs/images/readme/labels-sensing.svg" alt="At rest, then gathered, then open again" width="97%">
 
-- **Stack.** React and Vite, with three.js through react-three-fiber, in
-  plain JavaScript with custom GLSL shaders. Firebase is used only by the
-  optional Library.
-- **Generation** is plain JavaScript in [`react-app/src/lib/`](react-app/src/lib/):
-  - the landform and its relief (`field.js`)
-  - the sediment model (`sediment.js`)
-  - the headless history and the world data that placement reads
-    (`worldData.js`)
-  - water veins (`streams.js`)
-  - colonies (`scatter.js`) and their forms (`traceForms.js`)
-  - the L-system tissue (`branching.js`)
-  - the accumulation light (`accumulation.js`)
-  - the air's flow field (`air.js`)
-- **Rendering** is in [`react-app/src/components/`](react-app/src/components/):
-  the terrain and water shaders (`Terrain.jsx`), and the air as GPU
-  particles (`AmbientAir.jsx` and companions).
-- **Reproducible generation.** The same parameters always generate the same
-  world: the terrain, the record, and the colonies and their forms. The air
-  and the animation run in real time and are not reproduced frame for
-  frame. Changes are checked with fingerprints of the generated data and
-  with captures under a frozen clock.
+<sub><b>Sensing</b> &ensp;·&ensp; A resident gathers as a visitor comes near and opens again once they leave: a response to presence, not a stage of its life &ensp;·&ensp; <a href="docs/24-noticing.md">M3N</a>, <a href="docs/25-living-membrane.md">M3L</a></sub>
 
-To run it locally:
+<br><br>
+
+<p>
+<img src="docs/images/readme/cycle-standing.jpg" alt="A resident standing" width="32%">
+<img src="docs/images/readme/cycle-releasing.jpg" alt="The resident lying down as its films leave" width="32%">
+<img src="docs/images/readme/cycle-residue.jpg" alt="Pale residue where its films settled" width="32%">
+</p>
+
+<img src="docs/images/readme/labels-cycle.svg" alt="Standing, then releasing, then residue" width="97%">
+
+<sub><b>Lifecycle</b> &ensp;·&ensp; A resident lies down and lets its matter go as films on the air; they settle as residue that what grows next takes up &ensp;·&ensp; <a href="docs/22-habitat-m3e.md">M3E</a></sub>
+
+<sub>Recordings: <a href="docs/images/27-passage.mp4">release and landing</a> &ensp;·&ensp; <a href="docs/images/27-sheath-walk.mp4">walking up to a colony</a> &ensp;·&ensp; <a href="docs/images/25-living-membrane-walk.mp4">a living membrane</a></sub>
+
+<br><br>
+
+<img src="docs/images/readme/section-03.svg" alt="03" height="34">
+
+## Current Exploration
+
+**Morphology** &ensp;Membranes as living tissue; tendrils grown out of the colony.<br>
+<sub>[25](docs/25-living-membrane.md) · [26](docs/26-colony-motion.md) · [27](docs/27-sheath-and-passage.md)</sub>
+
+**Sensing** &ensp;Residents that notice a visitor and answer by their own state.<br>
+<sub>[22](docs/22-habitat-m3e.md) · [24](docs/24-noticing.md)</sub>
+
+**Material circulation** &ensp;Release, residue and uptake under one conserved ledger; next, a transfer through the tendril sheath.<br>
+<sub>[10](docs/10-lifecycle-concept.md) · [21](docs/21-habitat-m3.md) · [27](docs/27-sheath-and-passage.md#next-a-conserved-transfer-through-the-sheath-assessment-not-built)</sub>
+
+**Collective morphogenesis** &ensp;A shared cue in the air, and what each resident can perceive.<br>
+<sub>[19](docs/19-collective-morphogenesis.md) · [20](docs/20-cue-flow.md) · [23](docs/23-distributed-perception.md)</sub>
+
+<br>
+
+<img src="docs/images/readme/section-04.svg" alt="04" height="34">
+
+## Visual References
+
+<p>
+<img src="docs/images/readme/ref-plane-of-incidence.jpg" alt="Plane of Incidence: dense iridescent organic growth on pale ground" width="32%">
+<img src="docs/images/readme/ref-ephemeral-lake.jpg" alt="The Ephemeral Lake: a translucent ring-like form over a rocky shore" width="32%">
+<a href="docs/references/tendril%20morphology.png"><img src="docs/images/readme/ref-tendril-study.jpg" alt="Tendril morphology study: tapered arcs ending in teardrop bulbs" width="32%"></a>
+</p>
+
+<img src="docs/images/readme/labels-refs.svg" alt="Sabrina Ratté, Plane of Incidence, 2024; Jakob Kudsk Steensen, The Ephemeral Lake, 2024; concept study, tendril morphology, AI-generated" width="97%">
+
+<sub>Also: Alisa Andrasek / Wonderlab, <a href="https://www.alisaandrasek.com/projects/xenocells"><i>XenoCells</i></a> · Nervous System, <a href="https://n-e-r-v-o-u-s.com/projects/floraform/"><i>Floraform</i></a> · Studio DRIFT, <a href="https://studiodrift.com/work/shylight/"><i>Shylight</i></a> · Philip Beesley, <i>Hylozoic Ground</i> · thatgamecompany, <i>Journey</i> · Giant Squid, <i>ABZÛ</i>. References are others' work or concept studies, not output of this project; more in <a href="docs/references/">docs/references</a>.</sub>
+
+<br><br>
+
+<img src="docs/images/readme/section-05.svg" alt="05" height="34">
+
+## Explore the Project
+
+**Habitat** &ensp;The world in first person: drift among the colonies and be noticed by them.<br>
+<sub>`/habitat` (M3S, also at `/habitat/m3s`; earlier spaces keep their routes, see the <a href="docs/studies.md">study index</a>) · local only · W A S D to drift, Q E lower and rise, drag to look</sub>
+
+**Explore** &ensp;The whole world as a design tool: change a parameter and it is generated again.<br>
+<sub>`/` · online at [residual-ecology.web.app](https://residual-ecology.web.app) · drag to orbit, scroll to zoom, P hides the parameters</sub>
+
+**Atlas** &ensp;An editorial archive: World, Life Cycles, Matter Exchange, Field Notes, Fragments.<br>
+<sub>`/atlas` · online at [residual-ecology.web.app/atlas](https://residual-ecology.web.app/atlas)</sub>
+
+<sub>Routes are for a local run (below). The published site, from October, serves Explore and the Atlas; the Habitat runs locally.</sub>
+
+<br>
+
+<p align="center"><img src="docs/images/readme/divider.svg" alt="" width="240"></p>
+
+<details>
+<summary><b>Development and technical details</b></summary>
+
+<br>
+
+**Run locally**
 
 ```
 cd react-app
 npm install
-npm run dev
+npm run dev        # http://localhost:5173
 ```
 
-The Library needs a Firebase project. Copy `react-app/.env.example` to
-`.env`; see [docs/tutorials/firebase.md](docs/tutorials/firebase.md). Without
-it the app runs and only saving is unavailable.
+The optional Library (saved configurations) needs a Firebase project: copy
+`react-app/.env.example` to `.env`, see
+[docs/tutorials/firebase.md](docs/tutorials/firebase.md). Without it
+everything else runs.
 
-## Status
+**How it's built**
 
-Ongoing. **Working:**
-- the shared world and its chain of dependencies
-- Explore, with regeneration that never shows a half-built world
-- colony formation, and light held in matter
-- a reviewed, layered atmosphere that responds to the colonies
+```
+landform ─► relief ─► water veins carved in
+                         │
+          sediment record   (run before anything grows)
+                         │
+          colonies          (where the ground and the record allow)
+                         │
+   forms · tissue · light held in their matter · the air around them
+                         │
+          lifecycles        (Habitat: residents rise, release, and feed what follows)
+```
 
-**Open**, among others:
-- **Approximate alignment.** The haze, the water and the world's edge are
-  aligned to the ground only approximately.
-- **Stream water.** It breaks up at grazing angles and near stream mouths.
-- **The world's edge.** It is a visible square slab. The direction is an
-  organically gathered landform whose edges pass into the atmosphere.
-- **Branching.** It is an exploratory close-range study on one colony.
-- **The lifecycle (study 10).** A flagged demo on one patch of one colony,
-  not part of Explore as you see it.
-- **Rebuilding.** It runs on the main thread.
+- **Stack:** React and Vite, three.js through react-three-fiber, plain
+  JavaScript and custom GLSL. Firebase only for the Library.
+- **Generation** ([`react-app/src/lib/`](react-app/src/lib/)): landform
+  (`field.js`), sediment (`sediment.js`), world data (`worldData.js`),
+  streams (`streams.js`), colonies and forms (`scatter.js`,
+  `traceForms.js`), tissue (`branching.js`), light (`accumulation.js`), air
+  (`air.js`), lifecycles (`lifecycle.js`), the Habitat's spaces
+  (`habitat.js`).
+- **Rendering** ([`react-app/src/components/`](react-app/src/components/)):
+  terrain and water (`Terrain.jsx`), forms (`ScatterLayers.jsx`,
+  `LifecycleLayer.jsx`), the air as GPU particles (`AmbientAir.jsx`).
+- **Reproducible:** the same parameters always generate the same world, and
+  each lifecycle runs on a fixed step from its seed. Air and animation run in
+  real time.
 
-The full picture is in the
-[project status report](docs/project-status-2026-10.md), and open work is in
-the [backlog](backlog.md).
+</details>
 
-The site at **residual-ecology.web.app** serves Explore and the studies as
-of 14 October, and the Atlas at `/atlas`. The lifecycle experiments run
-locally only.
-
-The Habitat, a world to be in in first person, opens at `/habitat` from the
-Habitat tab beside Explore. It shows the featured space (M2, study 20); each
-Habitat study keeps its own route, `/habitat/v0` to `/habitat/m2`. Not yet
-deployed.
-
-## Studies
-
-**Presentation notes (November 2026):** [`docs/presentation/`](docs/presentation/README.md): the research overview, slide sequence, curated images, and what can be demonstrated at the M3E checkpoint.
-
-| | Study | What it explores | Status |
-|---|---|---|---|
-| 01 | [Noise / height field](docs/01-noise-study.md) | A landform from one continuous function, as map and mesh | Done |
-| 02 | [Sediment simulation](docs/02-sediment-simulation.md) | A second field moving across the first | Done; the basis of the record |
-| 03 | [Volume](docs/03-voxel-study.md) | Density fields, two meshers, a grown rather than eroded morphology | Done; a separate branch |
-| 04 | [Shaders](docs/04-shader-study.md) | Three material readings of one terrain | Done |
-| 05 | [Scatter](docs/05-scatter-study.md) | Colonies placed by rules over the world's data and its record | Done; refined in 09 |
-| 06 | [Water veins](docs/06-passages-study.md) | Streams traced downhill and carved into the shared ground | Paused |
-| 07 | [Air](docs/07-air-study.md) | A particle ecology built in reviewed layers | Checkpoint |
-| 08 | [Branching](docs/08-branching-study.md) | Residual matter becoming tissue: an L-system on the ground and the membranes | Checkpoint, one colony |
-| 09 | [Composition and light](docs/09-composition-and-light.md) | Gathering colonies, light held in matter, palette, water | Under review |
-| 10 | [Ecological continuity](docs/10-lifecycle-concept.md) | Residents of one patch change at different times; what they release settles as visible residue that a new resident takes up | Stages 0–2: a bounded demo behind a dev flag. Shared tissue: unfinished, paused |
-| 11 | [Embodied presence](docs/11-presence-study.md) | First-person exploration: a slowly drifting presence inside Explore's world, which changes nothing in it | Phase A: a prototype behind a dev flag, for review. Phase B (one membrane responding) planned |
-| 12 | [Habitat v0](docs/12-habitat-v0.md) | Explore's world as a place to be in, at `/habitat/v0`: two lifecycle patches, one membrane that yields to the visitor | Prototype |
-| 13 | [Habitat spaces](docs/13-habitat-spaces.md) | Two spatial organisations, terrain-led and tissue-led (`/habitat/a`, `/habitat/b`) | Kept for comparison |
-| 14–15 | [Habitat C](docs/14-habitat-c.md) and [its visual pass](docs/15-habitat-c-visual.md) | A soft basin with an emergent canopy (`/habitat/c`), and its palette | Kept for comparison |
-| 16 | [Habitat foundation](docs/16-habitat-foundation.md) | C1 (`/habitat/c1`): the working base, one ground to the horizon | Kept for comparison |
-| 17 | [Habitat D](docs/17-habitat-d.md) | A 48-unit world of rises and shallows, 13 colonies at different ages, a horizon (`/habitat/d`) | First playable |
-| 18 | [Habitat D1](docs/18-habitat-d1.md) | Visual hierarchy, one legible lifecycle passage, why the ecology goes dormant (`/habitat/d1`) | For review |
-| 19 | [A shared cue in the air (M1)](docs/19-collective-morphogenesis.md) | A release breathes a signal (not matter) downwind; residents answer by state (`/habitat/m1`) | Exploration |
-| 20 | [The cue in the moving air (M2)](docs/20-cue-flow.md) | M1's cue drawn in the existing air wisps; the rest rule diagnosed (`/habitat/m2`) | Exploration |
-| 21 | [Habitat M3](docs/21-habitat-m3.md) | The seam's white line sealed, calmer water, the cue drawn independently of the visitor, residue read by its age (`/habitat/m3`); M3R, the same at close range: exact shorelines, clear shallows, a resident that bends, sags and lies down (`/habitat/m3r`) | First playable, local; M3R for review |
-| 22 | [Habitat M3E](docs/22-habitat-m3e.md) | One encounter: the resident the visitor comes near yields as its own tension (matter and stage) has it, read-only to the lifecycle; films drawn as their residents' sheet; no stall near forms; the live-site light in the membranes' own tone (`/habitat/m3e`) | Prototype, local |
-
-Screenshots for studies 01, 02 and 04 were never captured; each document
-says what to grab.
-
-## Documentation
-
-- **[Project status, October 2026](docs/project-status-2026-10.md):** what
-  the project is, how it works, what is unresolved, where it could go.
-- **[Architecture and interface](docs/architecture.md):** the views, the
-  state, the verified dependency diagram, and the known spatial issues.
-- **[Project direction](PROJECT_DIRECTION.md):** the concept: its ambition,
-  and what is implemented so far.
-- **[Aesthetic language](AESTHETIC_LANGUAGE.md):** the visual and
-  experiential principles, reconciled with the current direction.
-- **[References](docs/references/):** external artworks, credited, and
-  AI-generated concept studies. Neither is output of this project; every
-  image in this README is a capture from the app.
-- **[Backlog](backlog.md):** open work, by kind.
-- **[Tutorials](docs/tutorials/):** Firebase setup, Git and React notes.
+<p align="center"><sub>
+<a href="docs/studies.md">Studies 01–27</a> &ensp;·&ensp;
+<a href="docs/architecture.md">Architecture</a> &ensp;·&ensp;
+<a href="PROJECT_DIRECTION.md">Project direction</a> &ensp;·&ensp;
+<a href="AESTHETIC_LANGUAGE.md">Aesthetic language</a> &ensp;·&ensp;
+<a href="docs/references/">References</a> &ensp;·&ensp;
+<a href="docs/presentation/README.md">Presentation notes</a> &ensp;·&ensp;
+<a href="docs/project-status-2026-10.md">Status, October</a> &ensp;·&ensp;
+<a href="backlog.md">Backlog</a> &ensp;·&ensp;
+<a href="docs/tutorials/">Tutorials</a>
+</sub></p>

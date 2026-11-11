@@ -269,8 +269,9 @@ Its own page, chosen in `Root.jsx` like the Atlas (`lib/route.js`
 generation and ecological code and keeps its own state:
 
 - **Routes:** `/habitat` opens the featured space, `FEATURED` in
-  `lib/habitat.js` (M2); featuring another changes only that. Every space
-  keeps its own route, `/habitat/<key>` (`v0`, `a` … `m2`).
+  `lib/habitat.js` (M3S since study 27; M2 before); featuring another
+  changes only that. Every space keeps its own route, `/habitat/<key>`
+  (`v0`, `a` … `m3s`).
 - **Entry:** the Habitat tab beside Explore, and in the Atlas's header
   (`HABITAT_PATH` in `lib/route.js`).
 - **Inside:** only a small arrow back to Explore in the corner, labelled on
@@ -420,6 +421,68 @@ M3E (`/habitat/m3e`, [study 22](22-habitat-m3e.md)) is M3R with:
 `Membrane`'s constants are now per instance (`E`); the placed veil keeps
 `ENCOUNTER`. The `ENCOUNTER` vertex block measures the dent on the sheet as
 it stands, which for the veil is its rest shape, as before.
+
+Study 23 ([distributed perception](23-distributed-perception.md)) adds two
+development flags, read from any Habitat's query and off otherwise:
+- **`?perceive=1`:** `PerceptionProbe` (in the scene) samples
+  `perceive()` (`lib/perception.js`) for one resident and surveys them
+  all. `PerceptionInspector` (the panel) shows it, with its store as
+  `window.__perception`. Both only read.
+- **`?respond=matter`:** Lifecycle's `respond` option (`'full'` by
+  default). The cue may set off a holding resident by its gathered cue ×
+  its fullness, not only a full one. No new state; the ledger is
+  unchanged.
+
+M3N (`/habitat/m3n`, [study 24](24-noticing.md)) is M3E with `notice`:
+- **`Noticing` (`lib/notice.js`):** updated each frame from the camera, on
+  the visitor's clock. It keeps a response level, the side approached from
+  and a habituation for the one or two nearest residents.
+- **The resident's materials compile `NOTICE`:**
+  - the frost in the film fragment shader
+  - the cup in the vertex shader, between the posture and the encounter
+- **Through existing channels:** LifecycleLayer adds the lean to `uWind`
+  and the crest's fold to `uPosture`.
+- **`poseFilm`** applies the same cup, so M3E's encounter meets the sheet as
+  drawn.
+
+Nothing in the lifecycle reads it.
+
+M3L (`/habitat/m3l`, [study 25](25-living-membrane.md)) is M3N with
+`living`:
+- **Resident membranes** are built denser (`buildBlooms` `detail`).
+- **They compile `LIVING`:** flutes, rim ruffle and lobes, and a staggered
+  gather, in the vertex shader before the posture. The bead compiles
+  `LIVING_TIP`.
+- **A per-resident spring** (LifecycleLayer) drives the gather from
+  `Noticing`'s target.
+- **`poseFilm`** applies the same deformation for the encounter.
+- **`Noticing`** takes `{ frost, cup, curl }` options.
+- **A space may set its arrival** (`arriveAt`).
+
+M3C (`/habitat/m3c`, [study 26](26-colony-motion.md)) is M3L with:
+- **`tendrils`:**
+  - `buildScatterGeometry` draws free strands and ribs past the lip as
+    tendrils, tagging each vertex (`aStrand`) and recording them on the
+    structure geometry's `userData.tendrils`.
+  - `Tendrils` (`lib/tendrils.js`, run by ScatterLayers) feeds the
+    structure material's `TENDRIL` block.
+- **`living: 'fan'`:** LifecycleLayer's `LIVING_FAN` preset.
+
+Without them the geometry and materials are as before.
+
+M3S (`/habitat/m3s`, [study 27](27-sheath-and-passage.md)) is M3C with:
+- **`tendrils: 'sheath'`:**
+  - `buildScatterGeometry` takes the soft branch of `tendrilise`.
+  - It adds membrane sheaths (`sheathe`) to the structure's films, tagged
+    like their stalks, and grows teardrop bulbs (`teardrop`).
+  - The bridgework film material compiles `TENDRIL` too.
+  - `Tendrils` takes `TENDRIL_SOFT` (less lift, a draw inward).
+- **`passage`:** read-only from the lifecycle.
+  - LifecycleLayer's films take `createFilmMesh({ passage })`, with comb
+    rows by distance travelled and the membrane's light.
+  - A wake strip (`createTrace`) replaces the motes.
+  - Resident films compile the form shader's `PASSAGE`: the sheet's spring
+    back and thin-film colour at a fresh release mark.
 
 The earlier studies added four more:
 - `shapingOp` on `createField`;

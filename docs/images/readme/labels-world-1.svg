@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="26" viewBox="0 0 1000 26" role="img" aria-label="Terrain, water, air, membranes">
+  <text x="124" y="17" text-anchor="middle" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="11" letter-spacing="2.8" fill="#8E85C9">TERRAIN</text>
+  <text x="376" y="17" text-anchor="middle" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="11" letter-spacing="2.8" fill="#8E85C9">WATER</text>
+  <text x="628" y="17" text-anchor="middle" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="11" letter-spacing="2.8" fill="#8E85C9">AIR</text>
+  <text x="881" y="17" text-anchor="middle" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="11" letter-spacing="2.8" fill="#8E85C9">MEMBRANES</text>
+</svg>
